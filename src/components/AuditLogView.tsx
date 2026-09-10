@@ -13,6 +13,7 @@ import {
   Loader2,
   ChevronDown,
   AlertCircle,
+  History,
 } from "lucide-react";
 import { format, parseISO } from "date-fns";
 import { tr } from "date-fns/locale";
@@ -475,16 +476,15 @@ export function AuditLogView({ onBack }: { onBack: () => void }) {
   };
 
   const actionIcon = (t: string) => {
-    if (t === "INSERT")
-      return <PlusCircle className="w-3.5 h-3.5 text-emerald-500 flex-shrink-0" />;
-    if (t === "UPDATE") return <Edit3 className="w-3.5 h-3.5 text-amber-500 flex-shrink-0" />;
-    return <Trash2 className="w-3.5 h-3.5 text-rose-500 flex-shrink-0" />;
+    if (t === "INSERT") return <PlusCircle className="w-3.5 h-3.5 text-emerald-500 shrink-0" />;
+    if (t === "UPDATE") return <Edit3 className="w-3.5 h-3.5 text-amber-500 shrink-0" />;
+    return <Trash2 className="w-3.5 h-3.5 text-rose-500 shrink-0" />;
   };
 
   return (
     <div className="flex flex-col h-full bg-background">
       {/* Header */}
-      <header className="px-4 pt-14 pb-3 border-b bg-card flex flex-col gap-3 flex-shrink-0">
+      <header className="px-4 pt-14 pb-3 border-b bg-card flex flex-col gap-3 shrink-0">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
             <button
@@ -567,9 +567,16 @@ export function AuditLogView({ onBack }: { onBack: () => void }) {
           ))}
 
           {filteredLogs.length === 0 && !isLoading && (
-            <div className="text-center py-20 text-muted-foreground/40 space-y-2">
-              <p className="text-sm font-medium">Henüz kayıt yok</p>
-              <p className="text-xs">Veri girişi yaptığınızda burada görünecek.</p>
+            <div className="flex flex-col items-center justify-center py-16 gap-4 text-center">
+              <div className="w-16 h-16 rounded-2xl bg-muted/50 flex items-center justify-center">
+                <History className="w-8 h-8 text-muted-foreground/40" />
+              </div>
+              <div className="space-y-1">
+                <p className="text-sm font-bold text-muted-foreground">Henüz kayıt yok</p>
+                <p className="text-[10px] text-muted-foreground/60 max-w-60 leading-relaxed">
+                  Veri girişi yaptığınızda tüm değişiklikler burada görünecek.
+                </p>
+              </div>
             </div>
           )}
         </div>
@@ -597,7 +604,7 @@ export function AuditLogView({ onBack }: { onBack: () => void }) {
             <div className="space-y-4">
               <div className="p-4 rounded-2xl bg-rose-500/5 border border-rose-500/15 space-y-2">
                 <div className="flex items-start gap-2.5">
-                  <AlertCircle className="w-4 h-4 text-rose-500 mt-0.5 flex-shrink-0" />
+                  <AlertCircle className="w-4 h-4 text-rose-500 mt-0.5 shrink-0" />
                   <div>
                     <h4 className="text-xs font-black text-rose-600 dark:text-rose-400 uppercase tracking-wider">
                       Yapılacak Değişiklik

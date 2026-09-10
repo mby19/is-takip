@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ders 1: React 19 Yeni Hook'ları</title>
+    <style>
+        :root {
+            --bg: #fafaf9;
+            --text: #1c1917;
+            --muted: #78716c;
+            --primary: #d97706;
+            --primary-light: #fef3c7;
+            --border: #e7e5e4;
+            --code-bg: #f5f5f4;
+        }
+        
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        body {
+            font-family: 'Georgia', serif;
+            line-height: 1.7;
+            color: var(--text);
+            background: var(--bg);
+            max-width: 680px;
+            margin: 0 auto;
+            padding: 3rem 1.5rem;
+        }
+        
+        h1 {
+            font-size: 2rem;
+            font-weight: 700;
+            margin-bottom: 0.5rem;
+            letter-spacing: -0.02em;
+        }
+        
+        .subtitle {
+            color: var(--muted);
+            font-size: 1.1rem;
+            margin-bottom: 2rem;
+            font-style: italic;
+        }
+        
+        h2 {
+            font-size: 1.4rem;
+            font-weight: 600;
+            margin: 2.5rem 0 1rem;
+            color: var(--primary);
+        }
+        
+        p { margin-bottom: 1.25rem; }
+        
+        .highlight {
+            background: var(--primary-light);
+            padding: 0.2rem 0.4rem;
+            border-radius: 3px;
+            font-family: 'Menlo', monospace;
+            font-size: 0.9em;
+        }
+        
+        pre {
+            background: var(--code-bg);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 1rem;
+            overflow-x: auto;
+            margin: 1.5rem 0;
+            font-size: 0.85rem;
+            line-height: 1.5;
+        }
+        
+        code {
+            font-family: 'Menlo', monospace;
+            font-size: 0.85em;
+        }
+        
+        .exercise {
+            background: var(--primary-light);
+            border-left: 4px solid var(--primary);
+            padding: 1rem 1.25rem;
+            margin: 2rem 0;
+            border-radius: 0 6px 6px 0;
+        }
+        
+        .exercise h3 {
+            font-size: 1rem;
+            font-weight: 600;
+            margin-bottom: 0.5rem;
+        }
+        
+        .key-concept {
+            background: var(--code-bg);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 1rem 1.25rem;
+            margin: 1.5rem 0;
+        }
+        
+        .key-concept strong {
+            display: block;
+            margin-bottom: 0.5rem;
+            color: var(--primary);
+        }
+        
+        a {
+            color: var(--primary);
+            text-decoration: none;
+            border-bottom: 1px solid var(--primary);
+        }
+        
+        a:hover {
+            background: var(--primary-light);
+        }
+        
+        .next-steps {
+            margin-top: 3rem;
+            padding-top: 2rem;
+            border-top: 1px solid var(--border);
+        }
+        
+        .next-steps h2 {
+            margin-top: 0;
+        }
+        
+        ul {
+            margin-left: 1.5rem;
+            margin-bottom: 1.25rem;
+        }
+        
+        li {
+            margin-bottom: 0.5rem;
+        }
+    </style>
+</head>
+<body>
+    <h1>Ders 1: React 19 Yeni Hook'ları</h1>
+    <p class="subtitle">İş Takip projende kullanabileceğin yeni hook'lar</p>
+    
+    <p>React 19 ile gelen yeni hook'lar, form yönetimi ve async state'i çok daha temiz hale getiriyor. Bu derste üç önemli hook'u öğreneceksin: <span class="highlight">useActionState</span>, <span class="highlight">useOptimistic</span>, ve <span class="highlight">use()</span>.</p>
+    
+    <h2>1. useActionState — Form State Yönetimi</h2>
+    
+    <p>Eskiden form submit'leri için <code>useState</code> + <code>useTransition</code> karışımı kullanıyorduk. <code>useActionState</code> her şeyi tek bir hook'ta topluyor.</p>
+    
+    <div class="key-concept">
+        <strong>Ne zaman kullanılır?</strong>
+        Form submit, loading state, error handling — hepsi bir arada.
+    </div>
+    
+    <pre><code>// Eski yöntem (React 18)
+const [isPending, setIsPending] = useState(false);
+const [error, setError] = useState(null);
+
+const handleSubmit = async (e) => {
+  e.preventDefault();
+  setIsPending(true);
+  try {
+    await createWorker(formData);
+  } catch (err) {
+    setError(err);
+  } finally {
+    setIsPending(false);
+  }
+};
+
+// Yeni yöntem (React 19)
+const [state, formAction, isPending] = useActionState(
+  async (previousState, formData) => {
+    const result = await createWorker(formData);
+    return result;
+  },
+  null // initial state
+);</code></pre>
+    
+    <div class="exercise">
+        <h3>🎯 Pratik Yap</h3>
+        <p>İş Takip'teki <code>WorkersScreen</code>'deki "Yeni Çalışan Ekle" formunu düşün. Şu an nasıl state yönetiliyor?</p>
+        <ol>
+            <li><code>WorkersScreen.tsx</code>'i aç</li>
+            <li>Form submit handler'ını bul</li>
+            <li>Hangi state'ler kullanılıyor? Say</li>
+            <li><code>useActionState</code> ile nasıl sadeleşir?</li>
+        </ol>
+    </div>
+    
+    <h2>2. useOptimistic — Anında Geri Bildirim</h2>
+    
+    <p>Kullanıcı bir şey yaptığında, sonucu beklemeden <strong>hemen</strong>看到显示。Sonra sunucu yanıtı gelince gerçek değerle değiştir.</p>
+    
+    <div class="key-concept">
+        <strong>İş Takip'te kullanım alanı:</strong>
+        Çalışan eklerken, sunucu yanıtını beklemeden listede hemen göster.
+    </div>
+    
+    <pre><code>const [workers, addOptimistic] = useOptimistic(
+  currentWorkers,
+  (state, newWorker) => [...state, { ...newWorker, pending: true }]
+);
+
+const handleAddWorker = async (workerData) => {
+  // 1. Anında göster (optimistic)
+  addOptimistic(workerData);
+  
+  // 2. Sunucuya gönder
+  await createWorker(workerData);
+  
+  // 3. Gerçek veriyle değiştir (revalidate)
+  revalidateWorkers();
+};</code></pre>
+    
+    <p>Bu sayede kullanıcı "Ekle" butonuna bastığında <strong>anında</strong>看到新员工出现在列表中，而不是等待网络请求。</p>
+    
+    <h2>3. use() — Promise ve Context Okuma</h2>
+    
+    <p>Yeni <code>use()</code> hook'u, component render sırasında Promise okuyabilir. Bu, <code>useEffect</code> + <code>useState</code> kombinasyonunu basitleştirir.</p>
+    
+    <pre><code>// Eski yöntem
+const [data, setData] = useState(null);
+const [loading, setLoading] = useState(true);
+
+useEffect(() => {
+  fetchData().then(setData).finally(() => setLoading(false));
+}, []);
+
+// Yeni yöntem (React 19)
+const data = use(fetchData());</code></pre>
+    
+    <div class="key-concept">
+        <strong>⚠️ Dikkat:</strong>
+        <code>use()</code> sadece Client Component'lerde çalışır. Server Component'lerde zaten <code>async/await</code> kullanabilirsin.
+    </div>
+    
+    <h2>Projen İçin Ne Anlama Geliyor?</h2>
+    
+    <p>İş Takip'te şu an <code>useState</code> + <code>useEffect</code> ile yönetilen birçok yer var. Yeni hook'larla:</p>
+    
+    <ul>
+        <li><strong>DayDetailSheet</strong> — Form submit'ler <code>useActionState</code> ile</li>
+        <li><strong>WorkersScreen</strong> — Yeni çalışan ekleme <code>useOptimistic</code> ile</li>
+        <li><strong>CalendarView</strong> — Veri yükleme <code>use()</code> ile</li>
+    </ul>
+    
+    <div class="next-steps">
+        <h2>Sıradaki Adımlar</h2>
+        <ul>
+            <li><strong>Ders 2:</strong> TypeScript Generics — <code>fetchQuery&lt;T&gt;</code> gibi typed fonksiyonlar</li>
+            <li><strong>Ders 3:</strong> Zustand Middlewares — persist ve devtools ekleme</li>
+        </ul>
+        
+        <p><strong>Soru mu var?</strong> Herhangi bir kısım hakkında daha fazla açıklama istersen sor. Ben öğretmenin buradayım.</p>
+        
+        <p style="margin-top: 1.5rem; font-size: 0.9rem; color: var(--muted);">
+            <strong>Kaynak:</strong> <a href="https://react.dev/reference/react/useActionState">React 19 useActionState</a> | 
+            <a href="https://react.dev/reference/react/useOptimistic">useOptimistic</a> | 
+            <a href="https://react.dev/reference/react/use">use()</a>
+        </p>
+    </div>
+</body>
+</html>

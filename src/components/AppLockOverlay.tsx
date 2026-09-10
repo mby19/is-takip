@@ -102,7 +102,7 @@ export function AppLockOverlay({ onUnlock }: AppLockOverlayProps) {
 
   return (
     <div
-      className={`fixed inset-0 z-[9999] w-screen h-screen flex flex-col justify-center items-center bg-background/80 backdrop-blur-2xl transition-all duration-500 ease-in-out select-none ${
+      className={`absolute inset-0 z-9999 w-screen h-screen flex flex-col justify-center items-center bg-background/80 backdrop-blur-2xl transition-all duration-500 ease-in-out select-none ${
         isExiting ? "-translate-y-full opacity-0 pointer-events-none" : "translate-y-0 opacity-100"
       }`}
     >
@@ -117,7 +117,7 @@ export function AppLockOverlay({ onUnlock }: AppLockOverlayProps) {
               </div>
               <div className="space-y-1">
                 <h2 className="text-xl font-black tracking-tight">Kilitli 🔒</h2>
-                <p className="text-xs text-muted-foreground font-semibold max-w-[280px]">
+                <p className="text-xs text-muted-foreground font-semibold max-w-70">
                   Girmek için 3 resmi sırasıyla seç
                 </p>
               </div>
@@ -206,7 +206,7 @@ export function AppLockOverlay({ onUnlock }: AppLockOverlayProps) {
                 <h2 className="text-xl font-black tracking-tight text-rose-600 dark:text-rose-400">
                   Kurtarma Şifresi
                 </h2>
-                <p className="text-xs text-muted-foreground font-semibold max-w-[280px]">
+                <p className="text-xs text-muted-foreground font-semibold max-w-70">
                   4 haneli kurtarma şifrenizi girin, kilit kapansın.
                 </p>
               </div>
@@ -232,7 +232,7 @@ export function AppLockOverlay({ onUnlock }: AppLockOverlayProps) {
             </div>
 
             {/* Numeric Keypad */}
-            <div className="grid grid-cols-3 gap-3 w-full max-w-[280px]">
+            <div className="grid grid-cols-3 gap-3 w-full max-w-70]">
               {["1", "2", "3", "4", "5", "6", "7", "8", "9"].map((num) => (
                 <button
                   key={num}
@@ -262,7 +262,7 @@ export function AppLockOverlay({ onUnlock }: AppLockOverlayProps) {
               </button>
             </div>
 
-            <div className="text-[10px] text-center font-bold text-rose-500/60 max-w-[240px] mt-6 leading-relaxed">
+            <div className="text-[10px] text-center font-bold text-rose-500/60 max-w-60 mt-6 leading-relaxed">
               Doğru şifreyi girince kilit otomatik kapanır, rahat ol.
             </div>
           </>

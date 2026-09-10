@@ -1,9 +1,11 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App";
+import { initErrorMonitoring } from "./lib/errorMonitoring";
 import "./index.css";
 
-// DEBUG: Gerçek cihazlarda beyaz/siyah ekran hatasını yakalamak için
+initErrorMonitoring();
+
 window.onerror = function (msg, url, line, _col, _error) {
   alert("JS HATASI: " + msg + "\nSatır: " + line + "\nURL: " + url);
   return false;

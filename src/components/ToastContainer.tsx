@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { createPortal } from "react-dom";
 import { useToastStore } from "../stores/toastStore";
 import { X } from "lucide-react";
 
@@ -60,13 +61,15 @@ function ToastItem({
     ),
   };
 
+  const dismiss = () => {
+    setExiting(true);
+    setTimeout(() => onRemove(id), 300);
+  };
+
   return (
     <div
       data-exiting={exiting ? "true" : undefined}
-      onClick={() => {
-        setExiting(true);
-        setTimeout(() => onRemove(id), 300);
-      }}
+      onClick={dismiss}
       className={`
         pointer-events-auto flex items-center gap-2.5 px-4 py-3 rounded-2xl shadow-2xl text-sm font-bold cursor-pointer
         transition-all duration-300 ease-out active:scale-95
@@ -83,7 +86,16 @@ function ToastItem({
     >
       {iconMap[type]}
       <span className="flex-1">{message}</span>
-      <X className="w-3.5 h-3.5 opacity-60 hover:opacity-100 transition-opacity shrink-0" />
+      <button
+        onClick={(e) => {
+          e.stopPropagation();
+          dismiss();
+        }}
+        className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-white/20 active:scale-90 transition-all shrink-0"
+        aria-label="Kapat"
+      >
+        <X className="w-4 h-4" />
+      </button>
     </div>
   );
 }
@@ -93,13 +105,14 @@ export function ToastContainer() {
 
   if (toasts.length === 0) return null;
 
-  return (
-    <div className="fixed bottom-[80px] left-1/2 -translate-x-1/2 z-[9999] flex flex-col gap-2 w-[90vw] max-w-sm pointer-events-none">
+  return createPortal(
+    <div className="fixed bottom-25 left-1/2 -translate-x-1/2 z-9999 flex flex-col gap-2 w-[90vw] max-w-sm pointer-events-none">
       {toasts.map((t, i) => (
         <div key={t.id} className="animate-slide-up" style={{ animationDelay: `${i * 60}ms` }}>
           <ToastItem id={t.id} message={t.message} type={t.type} onRemove={removeToast} />
         </div>
       ))}
-    </div>
+    </div>,
+    document.body,
   );
 }

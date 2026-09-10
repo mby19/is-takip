@@ -33,7 +33,7 @@ export interface Payment {
 
 export interface AuditLog {
   id: number;
-  action_type: "INSERT" | "UPDATE" | "DELETE";
+  action_type: "INSERT" | "UPDATE" | "DELETE" | "EXPORT" | "IMPORT" | "DELETE_FILE";
   entity_table: string;
   record_id: number;
   old_data: string | null;

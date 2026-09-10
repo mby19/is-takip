@@ -20,6 +20,12 @@ import {
 } from "lucide-react";
 import jsPDF from "jspdf";
 import "jspdf-autotable";
+import { registerTurkishFont } from "../lib/pdfFont";
+
+type JsPDFWithTable = jsPDF & {
+  autoTable: (options: Record<string, unknown>) => void;
+  lastAutoTable?: { finalY: number };
+};
 import { format, parseISO, startOfMonth, endOfMonth } from "date-fns";
 import { tr } from "date-fns/locale";
 import type { Worker, Payment } from "../types";
@@ -98,17 +104,22 @@ export function WorkerDetailView({ worker, onBack }: WorkerDetailViewProps) {
   const handleExportPDF = async () => {
     try {
       const doc = new jsPDF();
+      await registerTurkishFont(doc);
+      doc.setFont("Inter");
+
       const monthStr = format(currentMonth, "MMMM yyyy", { locale: tr });
 
       // Header
       doc.setFontSize(20);
-      doc.text("Aylik Calisma Durumu ve Hakedis Dokumu", 14, 22);
+      doc.setFont("Inter", "black");
+      doc.text("Aylık Çalışma Durumu ve Hakediş Dökümü", 14, 22);
 
       doc.setFontSize(11);
-      doc.text(`Calisan: ${worker.name}`, 14, 32);
-      doc.text(`Donem: ${monthStr}`, 14, 38);
-      doc.text(`Aylik Toplam Kazanc: ${stats.totalEarnedInMonth} TL`, 14, 44);
-      doc.text(`Odenen: ${stats.totalPaid} TL | Kalan Bakiye: ${stats.balance} TL`, 14, 50);
+      doc.setFont("Inter", "normal");
+      doc.text(`Çalışan: ${worker.name}`, 14, 32);
+      doc.text(`Dönem: ${monthStr}`, 14, 38);
+      doc.text(`Aylık Toplam Kazanç: ${stats.totalEarnedInMonth} TL`, 14, 44);
+      doc.text(`Ödenen: ${stats.totalPaid} TL | Kalan Bakiye: ${stats.balance} TL`, 14, 50);
 
       // Table Data
       const tableBody = stats.dailyBreakdown.map((day) => [
@@ -116,7 +127,7 @@ export function WorkerDetailView({ worker, onBack }: WorkerDetailViewProps) {
         day.status === "FULL"
           ? "Tam"
           : day.status === "HALF"
-            ? "Yarim"
+            ? "Yarım"
             : day.status === "ABSENT"
               ? "Yok"
               : "-",
@@ -124,16 +135,17 @@ export function WorkerDetailView({ worker, onBack }: WorkerDetailViewProps) {
       ]);
 
       if (tableBody.length > 0) {
-        (doc as any).autoTable({
+        (doc as JsPDFWithTable).autoTable({
           startY: 55,
-          head: [["Tarih", "Durum", "Kazanc"]],
+          head: [["Tarih", "Durum", "Kazanç"]],
           body: tableBody,
           theme: "grid",
           headStyles: { fillColor: [59, 130, 246] },
+          styles: { font: "Inter" },
         });
       }
 
-      const finalY = (doc as any).lastAutoTable?.finalY || 55;
+      const finalY = (doc as JsPDFWithTable).lastAutoTable?.finalY || 55;
 
       const monthPrefix = format(currentMonth, "yyyy-MM");
       const monthlyPayments = payments.filter(
@@ -141,19 +153,21 @@ export function WorkerDetailView({ worker, onBack }: WorkerDetailViewProps) {
       );
 
       if (monthlyPayments.length > 0) {
-        doc.text("Bu Ay Yapilan Odemeler / Avanslar", 14, finalY + 15);
+        doc.setFont("Inter", "bold");
+        doc.text("Bu Ay Yapılan Ödemeler / Avanslar", 14, finalY + 15);
         const paymentsBody = monthlyPayments.map((p: Payment) => [
           format(parseISO(p.date), "dd MMM yyyy", { locale: tr }),
-          p.description || "Nakit Odeme",
+          p.description || "Nakit Ödeme",
           `${p.amount} TL`,
         ]);
 
-        (doc as any).autoTable({
+        (doc as JsPDFWithTable).autoTable({
           startY: finalY + 20,
-          head: [["Tarih", "Aciklama", "Tutar"]],
+          head: [["Tarih", "Açıklama", "Tutar"]],
           body: paymentsBody,
           theme: "striped",
           headStyles: { fillColor: [16, 185, 129] },
+          styles: { font: "Inter" },
         });
       }
 
@@ -165,7 +179,7 @@ export function WorkerDetailView({ worker, onBack }: WorkerDetailViewProps) {
       } else {
         doc.save(fileName);
       }
-    } catch (e: any) {
+    } catch (e: unknown) {
       console.error("[PDF] Export error:", e);
     }
   };
@@ -186,18 +200,18 @@ export function WorkerDetailView({ worker, onBack }: WorkerDetailViewProps) {
   return (
     <div className="flex flex-col h-full bg-background stagger-children">
       {/* Header */}
-      <header className="px-4 pt-14 pb-4 border-b bg-card flex items-center gap-3 flex-shrink-0">
+      <header className="px-4 pt-14 pb-4 border-b bg-card flex items-center gap-3 shrink-0">
         <button
           onClick={onBack}
-          className="w-10 h-10 rounded-xl bg-muted/60 flex items-center justify-center active:scale-90 transition-all flex-shrink-0"
+          className="w-10 h-10 rounded-xl bg-muted/60 flex items-center justify-center active:scale-90 transition-all shrink-0"
         >
           <ArrowLeft className="w-5 h-5" />
         </button>
         <div
-          className={`w-10 h-10 rounded-xl flex items-center justify-center font-black text-sm text-white shadow-md flex-shrink-0 ${
+          className={`w-10 h-10 rounded-xl flex items-center justify-center font-black text-sm text-white shadow-md shrink-0 ${
             worker.worker_type === "ORTAK"
-              ? "bg-gradient-to-br from-amber-400 to-orange-500"
-              : "bg-gradient-to-br from-blue-400 to-indigo-500"
+              ? "bg-linear-to-br from-amber-400 to-orange-500"
+              : "bg-linear-to-br from-blue-400 to-indigo-500"
           }`}
         >
           {worker.name.charAt(0).toUpperCase()}
@@ -217,7 +231,7 @@ export function WorkerDetailView({ worker, onBack }: WorkerDetailViewProps) {
         </div>
         <button
           onClick={() => setIsEditOpen(true)}
-          className="w-10 h-10 rounded-xl bg-muted/60 flex items-center justify-center active:scale-90 transition-all flex-shrink-0"
+          className="w-10 h-10 rounded-xl bg-muted/60 flex items-center justify-center active:scale-90 transition-all shrink-0"
         >
           <Edit2 className="w-4 h-4 text-muted-foreground" />
         </button>
@@ -343,12 +357,12 @@ export function WorkerDetailView({ worker, onBack }: WorkerDetailViewProps) {
 
           {/* Finansal Özet — 3 kart yan yana */}
           <div className="grid grid-cols-3 gap-2">
-            <div className="bg-gradient-to-br from-primary/5 to-primary/10 border border-primary/10 dark:border-primary/20 p-3 rounded-xl text-center">
+            <div className="bg-linear-to-br from-primary/5 to-primary/10 border border-primary/10 dark:border-primary/20 p-3 rounded-xl text-center">
               <TrendingUp className="w-4 h-4 text-primary mx-auto mb-1" />
               <p className="text-[8px] font-bold text-primary/60 dark:text-primary/80 uppercase tracking-wider">
                 Top. Kazanç
               </p>
-              <p className="text-base font-black text-primary mt-0.5">
+              <p className="text-base font-black font-mono tracking-tight text-primary mt-0.5">
                 ₺{stats.totalEarnedInMonth.toLocaleString("tr-TR")}
               </p>
             </div>
@@ -358,7 +372,7 @@ export function WorkerDetailView({ worker, onBack }: WorkerDetailViewProps) {
                 Ödenmeyen
               </p>
               <p
-                className={`text-base font-black mt-0.5 ${stats.balance >= 0 ? "text-emerald-700 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"}`}
+                className={`text-base font-black font-mono tracking-tight mt-0.5 ${stats.balance >= 0 ? "text-emerald-700 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"}`}
               >
                 ₺{stats.balance.toLocaleString("tr-TR")}
               </p>
@@ -368,7 +382,7 @@ export function WorkerDetailView({ worker, onBack }: WorkerDetailViewProps) {
               <p className="text-[8px] font-bold text-blue-600/60 dark:text-blue-400/80 uppercase tracking-wider">
                 Ödenen
               </p>
-              <p className="text-base font-black text-blue-700 dark:text-blue-400 mt-0.5">
+              <p className="text-base font-black font-mono tracking-tight text-blue-700 dark:text-blue-400 mt-0.5">
                 ₺{stats.totalPaid.toLocaleString("tr-TR")}
               </p>
             </div>
@@ -383,7 +397,7 @@ export function WorkerDetailView({ worker, onBack }: WorkerDetailViewProps) {
           </button>
 
           {/* Kazanç Grafiği */}
-          <div className="bg-card border rounded-xl p-3 h-[180px] flex flex-col">
+          <div className="bg-card border rounded-xl p-3 h-45 flex flex-col">
             <h3 className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-2 ml-1">
               Günlük Kazanç Trendi
             </h3>
@@ -436,7 +450,7 @@ export function WorkerDetailView({ worker, onBack }: WorkerDetailViewProps) {
 
           {/* Katılım Oranı & Çalışma Durumu Özeti */}
           <div className="bg-card border rounded-xl p-3 flex gap-4 items-center shadow-sm">
-            <div className="w-[84px] h-[84px] relative flex-shrink-0">
+            <div className="w-21 h-21 relative shrink-0">
               <svg viewBox="0 0 84 84" className="w-full h-full">
                 {(() => {
                   const full = stats.fullDays;
@@ -551,7 +565,7 @@ export function WorkerDetailView({ worker, onBack }: WorkerDetailViewProps) {
                 <div className="flex-1 text-center">Durum</div>
                 <div className="w-20 text-right">Kazanç</div>
               </div>
-              <div className="divide-y max-h-[250px] overflow-y-auto no-scrollbar">
+              <div className="divide-y max-h-62.5 overflow-y-auto no-scrollbar">
                 {stats.dailyBreakdown.map((day) => (
                   <div
                     key={day.date}
@@ -680,7 +694,7 @@ export function WorkerDetailView({ worker, onBack }: WorkerDetailViewProps) {
                   className="flex justify-between items-center p-3 rounded-xl bg-card border shadow-sm"
                 >
                   <div className="flex gap-2.5 items-center">
-                    <div className="w-8 h-8 rounded-lg bg-blue-50 dark:bg-blue-500/10 flex items-center justify-center flex-shrink-0">
+                    <div className="w-8 h-8 rounded-lg bg-blue-50 dark:bg-blue-500/10 flex items-center justify-center shrink-0">
                       <Wallet className="w-4 h-4 text-blue-500 dark:text-blue-400" />
                     </div>
                     <div className="min-w-0">
@@ -692,7 +706,7 @@ export function WorkerDetailView({ worker, onBack }: WorkerDetailViewProps) {
                       </p>
                     </div>
                   </div>
-                  <div className="text-blue-600 dark:text-blue-400 font-black text-sm flex-shrink-0 ml-2">
+                  <div className="text-blue-600 dark:text-blue-400 font-black text-sm shrink-0 ml-2">
                     ₺{p.amount.toLocaleString("tr-TR")}
                   </div>
                 </div>
@@ -720,7 +734,7 @@ export function WorkerDetailView({ worker, onBack }: WorkerDetailViewProps) {
                     <Archive className="w-4 h-4" /> Çalışanı Arşivle
                   </button>
                 </DialogTrigger>
-                <DialogContent className="w-[90%] max-w-sm rounded-[24px] p-6 border-none shadow-2xl">
+                <DialogContent className="w-[90%] max-w-sm rounded-3xl p-6 border-none shadow-2xl">
                   <DialogHeader className="mb-4">
                     <DialogTitle className="text-xl font-black text-rose-600">
                       Çalışanı Arşivle

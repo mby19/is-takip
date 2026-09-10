@@ -34,21 +34,16 @@ export const getDb = async (): Promise<DatabaseInstance> => {
   if (dbInstance) return dbInstance;
 
   if (!loadPromise) {
-    console.log("Loading is_takip.db...");
     loadPromise = (Database as unknown as { load: (path: string) => Promise<unknown> })
       .load("sqlite:is_takip_v3.db")
       .then(async (db: unknown): Promise<DatabaseInstance> => {
         const d = db as DatabaseInstance;
-        console.log("Database loaded successfully");
-        // WAL moduna geç (Performans için)
         try {
           await d.execute("PRAGMA journal_mode=WAL;");
-          console.log("WAL mode enabled");
-        } catch (e) {
-          console.error("WAL mode error:", e);
+        } catch {
+          // WAL mode not critical
         }
 
-        // Dinamik tetikleyici entegrasyonu (Dual-Safety)
         try {
           for (const sql of DROP_TRIGGERS) {
             await d.execute(sql);
@@ -66,16 +61,14 @@ export const getDb = async (): Promise<DatabaseInstance> => {
           await d.execute(CREATE_PAYMENTS_INSERT_LOG);
           await d.execute(CREATE_PAYMENTS_UPDATE_LOG);
           await d.execute(CREATE_PAYMENTS_DELETE_LOG);
-          console.log("Tüm denetim tetikleyicileri dinamik olarak doğrulandı");
-        } catch (err) {
-          console.error("Dinamik tetikleyici doğrulama hatası:", err);
+        } catch {
+          // Trigger setup failed, but DB still works
         }
 
         dbInstance = d;
         return dbInstance;
       })
       .catch((err: unknown) => {
-        console.error("Database load error:", err);
         alert("Veritabanı yükleme hatası: " + err);
         throw err;
       });

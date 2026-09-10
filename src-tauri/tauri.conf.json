@@ -14,7 +14,10 @@
       {
         "title": "is-takip",
         "width": 800,
-        "height": 600
+        "height": 600,
+        "resizable": true,
+        "minWidth": 400,
+        "minHeight": 500
       }
     ],
     "security": {
@@ -30,6 +33,10 @@
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "copyright": "© 2026 İş Takip",
+    "category": "Business",
+    "shortDescription": "İnşaat sahası personel takip uygulaması",
+    "longDescription": "Bir inşaat/üretim sahasında çalışan personelin günlük devam durumunu, üretim miktarını ve ödemelerini takip etmek için geliştirilmiş masaüstü uygulaması."
   }
 }

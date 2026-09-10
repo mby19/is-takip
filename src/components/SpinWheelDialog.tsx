@@ -124,10 +124,10 @@ export function SpinWheelDialog() {
                 return (
                   <div
                     key={w.id}
-                    className="absolute w-[248px] h-[248px] top-0 left-0 flex justify-center items-start pt-6 text-white font-black text-[10px] drop-shadow-[0_1px_1px_rgba(0,0,0,0.5)]"
+                    className="absolute w-62 h-62 top-0 left-0 flex justify-center items-start pt-6 text-white font-black text-[10px] drop-shadow-[0_1px_1px_rgba(0,0,0,0.5)]"
                     style={{ transform: `rotate(${rotationAngle}deg)` }}
                   >
-                    <span className="truncate max-w-[80px]">{w.name.split(" ")[0]}</span>
+                    <span className="truncate max-w-20">{w.name.split(" ")[0]}</span>
                   </div>
                 );
               })}
@@ -177,7 +177,7 @@ export function SpinWheelDialog() {
                     key={w.id}
                     onClick={() => toggleWorker(w.id)}
                     disabled={isSpinning}
-                    className={`flex items-center gap-1.5 px-3 py-2 rounded-xl border-2 transition-all flex-shrink-0 text-xs font-bold active:scale-95 ${
+                    className={`flex items-center gap-1.5 px-3 py-2 rounded-xl border-2 transition-all shrink-0 text-xs font-bold active:scale-95 ${
                       selectedIds.has(w.id)
                         ? "border-primary bg-primary/5 text-foreground shadow-sm"
                         : "border-transparent bg-muted/50 text-muted-foreground opacity-50 grayscale"

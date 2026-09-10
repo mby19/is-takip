@@ -27,3 +27,5 @@ dist-ssr
 .codegraph/
 .sisyphus/
 ts_errors.txt
+.warden/
+.omo/

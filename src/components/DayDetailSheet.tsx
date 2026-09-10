@@ -5,7 +5,7 @@ import { useWorkerStore } from "../stores/workerStore";
 import { useAttendanceStore } from "../stores/attendanceStore";
 import { useMetricsStore } from "../stores/metricsStore";
 import { useToastStore } from "../stores/toastStore";
-import { fetchQuery, executeQuery } from "../lib/db";
+
 import { format, parseISO, subDays } from "date-fns";
 import { tr } from "date-fns/locale";
 import type { Worker, Attendance } from "../types";
@@ -29,8 +29,25 @@ export function DayDetailSheet({ isOpen, onClose, dateStr }: DayDetailSheetProps
 
   const isLoading = attLoading || metricsLoading;
 
-  // Arşivlenmiş çalışanları gizle
-  const workers = useMemo(() => allWorkers.filter((w) => w.is_active !== false), [allWorkers]);
+  // UI'de sadece aktif çalışanları göster
+  const displayWorkers = useMemo(
+    () => allWorkers.filter((w) => w.is_active !== false),
+    [allWorkers],
+  );
+
+  // Hesaplamalar için: aktif + o gün verisi olan arşivlenmiş çalışanlar
+  const calcWorkers = useMemo(() => {
+    if (!dateStr) return displayWorkers;
+    const dateAttWorkerIds = new Set(
+      attendances
+        .filter((a) => String(a.date).trim() === String(dateStr).trim())
+        .map((a) => Number(a.worker_id)),
+    );
+    const archivedWithData = allWorkers.filter(
+      (w) => w.is_active === false && dateAttWorkerIds.has(w.id),
+    );
+    return archivedWithData.length > 0 ? [...displayWorkers, ...archivedWithData] : displayWorkers;
+  }, [allWorkers, displayWorkers, attendances, dateStr]);
 
   const [production, setProduction] = useState<number>(0);
   const [totalEarned, setTotalEarned] = useState<number>(0);
@@ -63,7 +80,7 @@ export function DayDetailSheet({ isOpen, onClose, dateStr }: DayDetailSheetProps
     if (!dateStr || prevDateRef.current === dateStr) return;
     const prevDateStr = format(subDays(parseISO(dateStr), 1), "yyyy-MM-dd");
 
-    const hasExistingData = workers.some((w) =>
+    const hasExistingData = displayWorkers.some((w) =>
       attendances.some(
         (a: Attendance) =>
           Number(a.worker_id) === Number(w.id) && String(a.date).trim() === String(dateStr).trim(),
@@ -72,7 +89,7 @@ export function DayDetailSheet({ isOpen, onClose, dateStr }: DayDetailSheetProps
 
     if (!hasExistingData) {
       const prevDateEdits: Record<number, "FULL" | "HALF" | "ABSENT" | "HOLIDAY" | null> = {};
-      workers.forEach((w) => {
+      displayWorkers.forEach((w) => {
         const prevDayAtt = attendances.find(
           (a: Attendance) =>
             Number(a.worker_id) === Number(w.id) && String(a.date).trim() === prevDateStr,
@@ -87,7 +104,7 @@ export function DayDetailSheet({ isOpen, onClose, dateStr }: DayDetailSheetProps
     }
 
     prevDateRef.current = dateStr;
-  }, [dateStr, workers, attendances]);
+  }, [dateStr, displayWorkers, attendances]);
 
   const getWorkerStatus = (workerId: number) => {
     if (workerId in edits) return edits[workerId];
@@ -109,7 +126,7 @@ export function DayDetailSheet({ isOpen, onClose, dateStr }: DayDetailSheetProps
       };
 
     const attMap: Record<number, "FULL" | "HALF" | "ABSENT" | "HOLIDAY" | null> = {};
-    workers.forEach((w) => {
+    calcWorkers.forEach((w) => {
       if (w.id in edits) {
         attMap[w.id] = edits[w.id];
       } else {
@@ -122,34 +139,15 @@ export function DayDetailSheet({ isOpen, onClose, dateStr }: DayDetailSheetProps
       }
     });
 
-    return calculateDailyEarnings(workers, attMap, totalEarned, extraExpenses);
-  }, [workers, edits, attendances, dateStr, totalEarned, extraExpenses]);
+    return calculateDailyEarnings(calcWorkers, attMap, totalEarned, extraExpenses);
+  }, [calcWorkers, edits, attendances, dateStr, totalEarned, extraExpenses]);
 
   const handleSaveProduction = async () => {
     if (!dateStr || isSaving) return;
     setIsSaving(true);
     try {
-      // 1. Önceki Durumları Yakala (Loglama için)
-      const dayMetric = metrics.find((m) => String(m.date).trim() === String(dateStr).trim());
-      const oldProd = dayMetric?.production_amount || 0;
-      const oldEarned = dayMetric?.total_earned || 0;
-      const oldExpenses = dayMetric?.extra_expenses || 0;
-      const oldHoliday = dayMetric?.is_holiday ? 1 : 0;
-
-      const oldAttsParts = workers.map((w) => {
-        const a = attendances.find(
-          (att: Attendance) =>
-            Number(att.worker_id) === Number(w.id) &&
-            String(att.date).trim() === String(dateStr).trim(),
-        );
-        const status = a?.status || "YOK";
-        return `${w.id}:${w.name}:${status}`;
-      });
-      const oldAttsStr = oldAttsParts.join(", ");
-      const oldDataStr = `date=${dateStr}|production=${oldProd}|earned=${oldEarned}|expenses=${oldExpenses}|holiday=${oldHoliday}|atts=${oldAttsStr}`;
-
-      // 2. Çalışma durumunu güncelle (Tetikleyici tetiklenmeyecek)
-      for (const w of workers) {
+      // Attendance durumlarını kaydet (sadece aktif çalışanlar)
+      for (const w of displayWorkers) {
         const newStatus = getWorkerStatus(w.id);
         const oldStatus =
           attendances.find(
@@ -163,7 +161,7 @@ export function DayDetailSheet({ isOpen, onClose, dateStr }: DayDetailSheetProps
         }
       }
 
-      // 3. Metrikleri güncelle (Tetikleyici tetiklenmeyecek)
+      // Metrikleri güncelle (DB trigger'ları otomatik loglar)
       await updateMetrics(
         dateStr,
         Number(production),
@@ -171,47 +169,6 @@ export function DayDetailSheet({ isOpen, onClose, dateStr }: DayDetailSheetProps
         Number(extraExpenses),
         isHoliday,
       );
-
-      // 4. Sonraki Durumları Yakala (Loglama için)
-      const newProd = Number(production) || 0;
-      const newEarned = Number(totalEarned) || 0;
-      const newExpenses = Number(extraExpenses) || 0;
-      const newHoliday = isHoliday ? 1 : 0;
-
-      const newAttsParts = workers.map((w) => {
-        const status = getWorkerStatus(w.id) || "YOK";
-        return `${w.id}:${w.name}:${status}`;
-      });
-      const newAttsStr = newAttsParts.join(", ");
-      const newDataStr = `date=${dateStr}|production=${newProd}|earned=${newEarned}|expenses=${newExpenses}|holiday=${newHoliday}|atts=${newAttsStr}`;
-
-      // 5. Birleştirilmiş Tek Bir Geçmiş Kaydı Ekle (Audit Log)
-      try {
-        const actionType = dayMetric ? "UPDATE" : "INSERT";
-
-        type IdResult = { id: number };
-        const metricRow = await fetchQuery<IdResult>(
-          "SELECT id FROM daily_metrics WHERE date = ?",
-          [dateStr],
-        );
-        const recordId = metricRow.length > 0 ? metricRow[0].id : 0;
-
-        if (recordId > 0) {
-          await executeQuery(
-            "INSERT INTO audit_logs (action_type, entity_table, record_id, old_data, new_data) VALUES (?, ?, ?, ?, ?)",
-            [
-              actionType,
-              "daily_metrics",
-              recordId,
-              actionType === "UPDATE" ? oldDataStr : null,
-              newDataStr,
-            ],
-          );
-          console.log("[DayDetailSheet] Consolidated daily audit log created successfully!");
-        }
-      } catch (err) {
-        console.error("[DayDetailSheet] Manual audit log error:", err);
-      }
 
       onClose();
     } catch (err) {
@@ -226,15 +183,10 @@ export function DayDetailSheet({ isOpen, onClose, dateStr }: DayDetailSheetProps
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent
-        showCloseButton={false}
-        onInteractOutside={(e) => e.preventDefault()}
-        onEscapeKeyDown={(e) => e.preventDefault()}
-        className="max-w-md w-[95vw] max-h-[90vh] flex flex-col rounded-3xl p-0 gap-0 border-none shadow-2xl bg-background animate-scale-in"
-      >
+      <DialogContent className="max-w-md w-[95vw] max-h-[90vh] flex flex-col rounded-3xl p-0 gap-0 border-none shadow-2xl bg-background animate-scale-in">
         <div className="px-5 pt-6 flex flex-col flex-1 min-h-0">
           {/* Header */}
-          <DialogHeader className="mb-3 flex-shrink-0 text-left">
+          <DialogHeader className="mb-3 shrink-0 text-left">
             <div className="flex justify-between items-center">
               <div className="flex-1 min-w-0 pr-3">
                 <DialogTitle className="text-lg font-black tracking-tight truncate">
@@ -273,8 +225,8 @@ export function DayDetailSheet({ isOpen, onClose, dateStr }: DayDetailSheetProps
                         inputMode="decimal"
                         value={production || ""}
                         onChange={(e) => setProduction(parseFloat(e.target.value) || 0)}
-                        className="flex h-12 w-full rounded-xl border border-border bg-muted/30 px-4 text-base font-bold transition-all focus:bg-background focus:border-primary focus:ring-0 outline-none"
-                        placeholder="Miktar"
+                        className="flex h-12 w-full rounded-xl border border-border bg-muted/30 px-4 text-base font-bold font-mono tracking-tight transition-all focus:bg-background focus:border-primary focus:ring-0 outline-none"
+                        placeholder="0"
                       />
                     </div>
 
@@ -290,7 +242,7 @@ export function DayDetailSheet({ isOpen, onClose, dateStr }: DayDetailSheetProps
                             inputMode="decimal"
                             value={totalEarned || ""}
                             onChange={(e) => setTotalEarned(parseFloat(e.target.value) || 0)}
-                            className="flex h-12 w-full rounded-xl border border-border bg-muted/30 pl-10 pr-3 text-base font-bold transition-all focus:bg-background focus:border-emerald-500 focus:ring-0 outline-none"
+                            className="flex h-12 w-full rounded-xl border border-border bg-muted/30 pl-10 pr-3 text-base font-bold font-mono tracking-tight transition-all focus:bg-background focus:border-emerald-500 focus:ring-0 outline-none"
                             placeholder="0"
                           />
                         </div>
@@ -306,7 +258,7 @@ export function DayDetailSheet({ isOpen, onClose, dateStr }: DayDetailSheetProps
                             inputMode="decimal"
                             value={extraExpenses || ""}
                             onChange={(e) => setExtraExpenses(parseFloat(e.target.value) || 0)}
-                            className="flex h-12 w-full rounded-xl border border-border bg-muted/30 pl-10 pr-3 text-base font-bold transition-all focus:bg-background focus:border-rose-500 focus:ring-0 outline-none"
+                            className="flex h-12 w-full rounded-xl border border-border bg-muted/30 pl-10 pr-3 text-base font-bold font-mono tracking-tight transition-all focus:bg-background focus:border-rose-500 focus:ring-0 outline-none"
                             placeholder="0"
                           />
                         </div>
@@ -328,12 +280,13 @@ export function DayDetailSheet({ isOpen, onClose, dateStr }: DayDetailSheetProps
                             number,
                             "FULL" | "HALF" | "ABSENT" | "HOLIDAY" | null
                           > = {};
-                          workers.forEach((w) => {
+                          displayWorkers.forEach((w) => {
                             newEdits[w.id] = "FULL";
                           });
                           setEdits(newEdits);
                         }}
                         className="px-2.5 py-1.5 bg-emerald-50 text-emerald-600 border border-emerald-200 dark:bg-emerald-500/10 dark:border-emerald-500/20 dark:text-emerald-400 rounded-lg text-[9px] font-black uppercase tracking-wider active:scale-95 transition-transform"
+                        aria-label="Tüm çalışanları tam gün yap"
                       >
                         Tümünü Tam
                       </button>
@@ -343,19 +296,20 @@ export function DayDetailSheet({ isOpen, onClose, dateStr }: DayDetailSheetProps
                             number,
                             "FULL" | "HALF" | "ABSENT" | "HOLIDAY" | null
                           > = {};
-                          workers.forEach((w) => {
+                          displayWorkers.forEach((w) => {
                             newEdits[w.id] = "ABSENT";
                           });
                           setEdits(newEdits);
                         }}
                         className="px-2.5 py-1.5 bg-rose-50 text-rose-600 border border-rose-200 dark:bg-rose-500/10 dark:border-rose-500/20 dark:text-rose-400 rounded-lg text-[9px] font-black uppercase tracking-wider active:scale-95 transition-transform"
+                        aria-label="Tüm çalışanları yok say"
                       >
                         Tümünü Yok
                       </button>
                     </div>
                   </div>
                   <div className="space-y-2.5">
-                    {workers.map((worker: Worker) => {
+                    {displayWorkers.map((worker: Worker) => {
                       const status = getWorkerStatus(worker.id);
                       const earnings = calculations.individualEarnings[worker.id] || 0;
                       return (
@@ -366,8 +320,8 @@ export function DayDetailSheet({ isOpen, onClose, dateStr }: DayDetailSheetProps
                               <div
                                 className={`w-8 h-8 rounded-lg flex items-center justify-center font-bold text-xs text-white ${
                                   worker.worker_type === "ORTAK"
-                                    ? "bg-gradient-to-br from-amber-400 to-orange-500"
-                                    : "bg-gradient-to-br from-blue-400 to-indigo-500"
+                                    ? "bg-linear-to-br from-amber-400 to-orange-500"
+                                    : "bg-linear-to-br from-blue-400 to-indigo-500"
                                 }`}
                               >
                                 {worker.name.charAt(0).toUpperCase()}
@@ -387,7 +341,7 @@ export function DayDetailSheet({ isOpen, onClose, dateStr }: DayDetailSheetProps
                             </div>
                             <div className="text-right">
                               <p
-                                className={`text-sm font-black ${earnings >= 0 ? "text-foreground" : "text-rose-600"}`}
+                                className={`text-sm font-black font-mono tracking-tight ${earnings >= 0 ? "text-foreground" : "text-rose-600"}`}
                               >
                                 ₺{Math.floor(earnings).toLocaleString("tr-TR")}
                               </p>
@@ -458,7 +412,7 @@ export function DayDetailSheet({ isOpen, onClose, dateStr }: DayDetailSheetProps
           )}
 
           {/* Kaydet ve İptal Butonları — sabit altta */}
-          <div className="py-4 border-t mt-auto bg-background flex-shrink-0 flex gap-3 px-5 rounded-b-3xl">
+          <div className="py-4 border-t mt-auto bg-background shrink-0 flex gap-3 px-5 rounded-b-3xl">
             <button
               className="w-1/3 rounded-2xl h-12 font-bold text-muted-foreground bg-muted/50 hover:bg-muted transition-all active:scale-[0.97] text-sm"
               onClick={onClose}
@@ -467,7 +421,7 @@ export function DayDetailSheet({ isOpen, onClose, dateStr }: DayDetailSheetProps
             </button>
             <button
               disabled={isSaving}
-              className={`w-2/3 rounded-2xl h-12 font-black text-white bg-gradient-to-r from-primary to-purple-600 shadow-lg shadow-primary/20 transition-all active:scale-[0.97] text-sm ${isSaving ? "opacity-60 cursor-not-allowed" : ""}`}
+              className={`w-2/3 rounded-2xl h-12 font-black text-white bg-linear-to-r from-primary to-purple-600 shadow-lg shadow-primary/20 transition-all active:scale-[0.97] text-sm ${isSaving ? "opacity-60 cursor-not-allowed" : ""}`}
               onClick={handleSaveProduction}
             >
               {isSaving ? "Kaydediliyor..." : "Kaydet"}

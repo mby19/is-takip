@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef } from "react";
+import { useState, useEffect, useMemo, useRef, memo } from "react";
 import {
   format,
   startOfMonth,
@@ -25,13 +25,111 @@ import { useAttendanceStore } from "../stores/attendanceStore";
 import { useMetricsStore } from "../stores/metricsStore";
 import { TableSkeleton } from "./ui/skeleton";
 import type { DailyMetric, Attendance, Worker } from "../types";
-import { useAnimatedCounter } from "../hooks";
+import { useAnimatedCounter } from "../hooks/useAnimatedCounter";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "./ui/dialog";
 
 interface CalendarViewProps {
   onDayClick: (date: string) => void;
   onWorkerClick?: (worker: Worker) => void;
 }
+
+const getStatusDot = (status?: string) => {
+  const popClass = status ? "animate-status-pop" : "";
+  switch (status) {
+    case "FULL":
+      return (
+        <div
+          className={`w-6 h-6 rounded-md bg-emerald-100 dark:bg-emerald-500/20 flex items-center justify-center ${popClass}`}
+        >
+          <Check className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" strokeWidth={3} />
+        </div>
+      );
+    case "HALF":
+      return (
+        <div
+          className={`w-6 h-6 rounded-md bg-amber-100 dark:bg-amber-500/20 flex items-center justify-center ${popClass}`}
+        >
+          <Minus className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" strokeWidth={3} />
+        </div>
+      );
+    case "ABSENT":
+      return (
+        <div
+          className={`w-6 h-6 rounded-md bg-rose-100 dark:bg-rose-500/20 flex items-center justify-center ${popClass}`}
+        >
+          <X className="w-3.5 h-3.5 text-rose-500 dark:text-rose-400" strokeWidth={3} />
+        </div>
+      );
+    default:
+      return <div className="w-4 h-4 rounded-full border border-border/60" />;
+  }
+};
+
+const CalendarRow = memo(function CalendarRow({
+  dateStr,
+  dayName,
+  today,
+  metric,
+  workers,
+  attendanceMap,
+  onDayClick,
+  rowRef,
+}: {
+  dateStr: string;
+  dayName: string;
+  today: boolean;
+  metric: DailyMetric | undefined;
+  workers: readonly Worker[];
+  attendanceMap: Record<string, Attendance>;
+  onDayClick: (date: string) => void;
+  rowRef?: (el: HTMLDivElement | null) => void;
+}) {
+  return (
+    <div
+      ref={rowRef}
+      onClick={() => onDayClick(dateStr)}
+      className={`flex h-12 border-b border-border/40 transition-colors group cursor-pointer active:bg-muted/60 ${
+        today ? "bg-primary/4 dark:bg-primary/8" : "hover:bg-muted/30 dark:hover:bg-muted/10"
+      }`}
+    >
+      <div
+        className={`w-14 shrink-0 flex items-center justify-center gap-1 border-r sticky left-0 z-50 shadow-[2px_0_5px_rgba(0,0,0,0.03)] transition-colors ${
+          today ? "bg-primary text-primary-foreground" : "bg-card text-foreground"
+        }`}
+      >
+        <span className="text-xs font-black">{dateStr.slice(8)}</span>
+        <span className={`text-[7px] uppercase font-bold ${today ? "opacity-70" : "opacity-40"}`}>
+          {dayName}
+        </span>
+      </div>
+
+      {workers.map((w) => {
+        const att = attendanceMap[`${dateStr}-${w.id}`];
+        return (
+          <div
+            key={w.id}
+            className="w-20 shrink-0 overflow-hidden flex items-center justify-center border-r border-border/30"
+          >
+            {getStatusDot(att?.status)}
+          </div>
+        );
+      })}
+
+      <div className="w-24 shrink-0 flex items-center justify-center transition-all group-hover:bg-black/5 dark:group-hover:bg-white/5">
+        {metric && metric.production_amount > 0 ? (
+          <div className="bg-primary/10 dark:bg-primary/20 text-primary text-[10px] font-black px-3 py-1 rounded-md flex items-center gap-1.5 shadow-sm border border-primary/10 dark:border-primary/20">
+            <div className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
+            {metric.production_amount} <span className="opacity-50 text-[8px]">PALET</span>
+          </div>
+        ) : (
+          <span className="min-w-12 h-11 flex items-center justify-center text-[9px] text-muted-foreground/40 font-black uppercase tracking-widest hover:text-primary transition-colors border border-dashed border-transparent hover:border-primary/30 px-3 py-2 rounded-lg active:bg-muted/30">
+            + VERİ
+          </span>
+        )}
+      </div>
+    </div>
+  );
+});
 
 export function CalendarView({ onDayClick, onWorkerClick }: CalendarViewProps) {
   const [currentDate, setCurrentDate] = useState(new Date());
@@ -81,7 +179,6 @@ export function CalendarView({ onDayClick, onWorkerClick }: CalendarViewProps) {
     }
   }, [currentDate, daysInMonth.length, workers.length]);
 
-  // Sync horizontal scroll
   useEffect(() => {
     const scrollView = scrollRef.current;
     const headerView = headerRef.current;
@@ -92,7 +189,16 @@ export function CalendarView({ onDayClick, onWorkerClick }: CalendarViewProps) {
     };
 
     scrollView.addEventListener("scroll", handleScroll);
-    return () => scrollView.removeEventListener("scroll", handleScroll);
+
+    const resizeObserver = new ResizeObserver(() => {
+      headerView.scrollLeft = scrollView.scrollLeft;
+    });
+    resizeObserver.observe(scrollView);
+
+    return () => {
+      scrollView.removeEventListener("scroll", handleScroll);
+      resizeObserver.disconnect();
+    };
   }, []);
 
   const attendanceMap = useMemo(() => {
@@ -134,38 +240,6 @@ export function CalendarView({ onDayClick, onWorkerClick }: CalendarViewProps) {
     return 6.5;
   };
 
-  const getStatusDot = (status?: string) => {
-    const popClass = status ? "animate-status-pop" : "";
-    switch (status) {
-      case "FULL":
-        return (
-          <div
-            className={`w-6 h-6 rounded-md bg-teal-100 dark:bg-teal-500/20 flex items-center justify-center ${popClass}`}
-          >
-            <Check className="w-3.5 h-3.5 text-teal-600 dark:text-teal-400" strokeWidth={3} />
-          </div>
-        );
-      case "HALF":
-        return (
-          <div
-            className={`w-6 h-6 rounded-md bg-amber-100 dark:bg-amber-500/20 flex items-center justify-center ${popClass}`}
-          >
-            <Minus className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" strokeWidth={3} />
-          </div>
-        );
-      case "ABSENT":
-        return (
-          <div
-            className={`w-6 h-6 rounded-md bg-rose-100 dark:bg-rose-500/20 flex items-center justify-center ${popClass}`}
-          >
-            <X className="w-3.5 h-3.5 text-rose-500 dark:text-rose-400" strokeWidth={3} />
-          </div>
-        );
-      default:
-        return <div className="w-4 h-4 rounded-full border border-border/60" />;
-    }
-  };
-
   if (workers.length === 0) {
     if (isLoading) {
       return <TableSkeleton rows={6} cols={4} />;
@@ -176,7 +250,7 @@ export function CalendarView({ onDayClick, onWorkerClick }: CalendarViewProps) {
           <Users className="w-12 h-12 text-primary opacity-50" />
         </div>
         <h2 className="text-xl font-black tracking-tight">Henüz Çalışan Yok</h2>
-        <p className="text-sm text-muted-foreground font-medium max-w-[250px] leading-relaxed">
+        <p className="text-sm text-muted-foreground font-medium max-w-62.5 leading-relaxed">
           İş takibine başlamak için <strong className="text-foreground">Kişiler</strong> sekmesinden
           çalışan ekleyebilirsiniz.
         </p>
@@ -187,7 +261,7 @@ export function CalendarView({ onDayClick, onWorkerClick }: CalendarViewProps) {
   return (
     <div className="flex-1 flex flex-col w-full min-h-0 bg-background overflow-hidden relative stagger-children">
       {/* HEADER */}
-      <div className="z-50 bg-card border-b flex flex-col flex-shrink-0 shadow-sm">
+      <div className="z-50 bg-card border-b flex flex-col shrink-0 shadow-sm">
         {/* Ay Navigasyonu */}
         <div className="px-4 py-2.5 flex items-center justify-between">
           <button
@@ -318,20 +392,20 @@ export function CalendarView({ onDayClick, onWorkerClick }: CalendarViewProps) {
         {/* Tablo Başlığı */}
         <div ref={headerRef} className="overflow-hidden flex no-scrollbar border-t bg-muted/20">
           <div className="min-w-max flex text-[9px] font-black uppercase tracking-widest text-muted-foreground">
-            <div className="w-14 flex-shrink-0 py-3 text-center border-r bg-card sticky left-0 z-50 text-foreground shadow-[2px_0_5px_rgba(0,0,0,0.02)]">
+            <div className="w-14 shrink-0 py-3 text-center border-r bg-card sticky left-0 z-50 text-foreground shadow-[2px_0_5px_rgba(0,0,0,0.02)]">
               GÜN
             </div>
             {workers.map((w: Worker) => (
               <div
                 key={w.id}
                 onClick={() => onWorkerClick && onWorkerClick(w)}
-                className="w-20 flex-shrink-0 py-3 text-center border-r truncate px-1 cursor-pointer hover:bg-primary/5 active:bg-primary/10 transition-colors text-foreground hover:text-primary font-black"
+                className="w-20 shrink-0 py-3 text-center border-r truncate px-1 cursor-pointer hover:bg-primary/5 active:bg-primary/10 transition-colors text-foreground hover:text-primary font-black"
                 style={{ fontSize: nameFontSize(w.name) }}
               >
                 {w.name.split(" ")[0]}
               </div>
             ))}
-            <div className="w-24 flex-shrink-0 py-3 text-center text-primary font-bold bg-primary/[0.03]">
+            <div className="w-24 shrink-0 py-3 text-center text-primary font-bold bg-primary/3">
               PALET
             </div>
           </div>
@@ -348,60 +422,23 @@ export function CalendarView({ onDayClick, onWorkerClick }: CalendarViewProps) {
             const today = isToday(date);
 
             return (
-              <div
+              <CalendarRow
                 key={dateStr}
-                ref={today ? todayRowRef : null}
-                onClick={() => onDayClick(dateStr)}
-                className={`flex h-12 border-b border-border/40 transition-colors group cursor-pointer active:bg-muted/60 ${
+                dateStr={dateStr}
+                dayName={dayName}
+                today={today}
+                metric={metric}
+                workers={workers}
+                attendanceMap={attendanceMap}
+                onDayClick={onDayClick}
+                rowRef={
                   today
-                    ? "bg-primary/[0.04] dark:bg-primary/[0.08]"
-                    : "hover:bg-muted/30 dark:hover:bg-muted/10"
-                }`}
-              >
-                {/* Gün Sütunu — sticky */}
-                <div
-                  className={`w-14 flex-shrink-0 flex items-center justify-center gap-1 border-r sticky left-0 z-50 shadow-[2px_0_5px_rgba(0,0,0,0.03)] transition-colors ${
-                    today ? "bg-primary text-primary-foreground" : "bg-card text-foreground"
-                  }`}
-                >
-                  <span className={`text-xs font-black ${today ? "" : ""}`}>
-                    {format(date, "dd")}
-                  </span>
-                  <span
-                    className={`text-[7px] uppercase font-bold ${today ? "opacity-70" : "opacity-40"}`}
-                  >
-                    {dayName}
-                  </span>
-                </div>
-
-                {/* Çalışan Çalışma Durumu Hücreleri */}
-                {workers.map((w: Worker) => {
-                  const att = attendanceMap[`${String(dateStr)}-${String(w.id)}`];
-                  return (
-                    <div
-                      key={w.id}
-                      className="w-20 flex-shrink-0 overflow-hidden flex items-center justify-center border-r border-border/30"
-                    >
-                      {getStatusDot(att?.status)}
-                    </div>
-                  );
-                })}
-
-                {/* Veri Gir / Üretim Sütunu */}
-                <div className="w-24 flex-shrink-0 flex items-center justify-center transition-all group-hover:bg-black/5 dark:group-hover:bg-white/5">
-                  {metric && metric.production_amount > 0 ? (
-                    <div className="bg-primary/10 dark:bg-primary/20 text-primary text-[10px] font-black px-3 py-1 rounded-md flex items-center gap-1.5 shadow-sm border border-primary/10 dark:border-primary/20">
-                      <div className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
-                      {metric.production_amount}{" "}
-                      <span className="opacity-50 text-[8px]">PALET</span>
-                    </div>
-                  ) : (
-                    <span className="min-w-[48px] h-11 flex items-center justify-center text-[9px] text-muted-foreground/40 font-black uppercase tracking-widest hover:text-primary transition-colors border border-dashed border-transparent hover:border-primary/30 px-3 py-2 rounded-lg active:bg-muted/30">
-                      + VERİ
-                    </span>
-                  )}
-                </div>
-              </div>
+                    ? (el) => {
+                        (todayRowRef as React.MutableRefObject<HTMLDivElement | null>).current = el;
+                      }
+                    : undefined
+                }
+              />
             );
           })}
         </div>

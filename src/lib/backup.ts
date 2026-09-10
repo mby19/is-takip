@@ -64,9 +64,14 @@ export const exportDatabase = async () => {
       URL.revokeObjectURL(url);
       return fileName;
     }
-  } catch (e: any) {
+  } catch (e: unknown) {
     console.error("[Backup] Export error:", e);
     throw e;
+  } finally {
+    await executeQuery(
+      "INSERT INTO audit_logs (action_type, entity_table, record_id, new_data) VALUES (?, ?, ?, ?)",
+      ["EXPORT", "backup", 0, `file=${fileName}|exported_at=${new Date().toISOString()}`],
+    );
   }
 };
 
@@ -153,5 +158,10 @@ export const importDatabase = async (jsonString: string) => {
     await executeQuery(CREATE_PAYMENTS_INSERT_LOG);
     await executeQuery(CREATE_PAYMENTS_UPDATE_LOG);
     await executeQuery(CREATE_PAYMENTS_DELETE_LOG);
+
+    await executeQuery(
+      "INSERT INTO audit_logs (action_type, entity_table, record_id, new_data) VALUES (?, ?, ?, ?)",
+      ["IMPORT", "backup", 0, `imported_at=${new Date().toISOString()}`],
+    );
   }
 };
