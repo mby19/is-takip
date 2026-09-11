@@ -9,13 +9,25 @@ import {
   Trash2,
 } from "lucide-react";
 import { Button } from "./ui/button";
-import { exportDatabase, importDatabase } from "../lib/backup";
-import { executeQuery } from "../lib/db";
-import { isTauri, listBackupFiles, readTextFileFromDownloads } from "../lib/tauri";
+import {
+  exportDatabase,
+  importDatabase,
+  summarizeBackupFile,
+  type BackupSummary,
+} from "../lib/backup";
+import { auditLogRepository } from "../repositories/auditLogRepository";
+import {
+  isTauri,
+  listBackupFiles,
+  readTextFileFromDownloads,
+  removeFileFromDownloads,
+} from "../lib/tauri";
 import type { BackupFileInfo } from "../lib/tauri";
+import { useToastStore } from "../stores/toastStore";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "./ui/dialog";
 
-export function BackupSection({ onMessage }: { onMessage?: (msg: string) => void }) {
+export function BackupSection() {
+  const addToast = useToastStore((s) => s.addToast);
   const [loading, setLoading] = useState(false);
   const [isRestoreOpen, setIsRestoreOpen] = useState(false);
   const [backupFiles, setBackupFiles] = useState<BackupFileInfo[]>([]);
@@ -30,20 +42,16 @@ export function BackupSection({ onMessage }: { onMessage?: (msg: string) => void
   const [pendingDeleteFile, setPendingDeleteFile] = useState<string | null>(null);
   const [deleteChallengeCode, setDeleteChallengeCode] = useState("");
   const [deleteInputCode, setDeleteInputCode] = useState("");
-
-  const showMessage = (msg: string) => {
-    onMessage?.(msg);
-  };
+  const [pendingSummary, setPendingSummary] = useState<BackupSummary | null>(null);
+  const [safetyBackupPath, setSafetyBackupPath] = useState<string | null>(null);
 
   const handleExport = async () => {
     try {
       setLoading(true);
       const filePath = await exportDatabase();
-      const msg = filePath || "Yedekleme dosyası başarıyla indirildi.";
-      showMessage(msg);
+      addToast(`Yedek alındı: ${filePath}`, "success");
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      showMessage("Hata: " + msg);
+      addToast(`Yedek alınamadı: ${err instanceof Error ? err.message : String(err)}`, "error");
     } finally {
       setLoading(false);
     }
@@ -72,11 +80,32 @@ export function BackupSection({ onMessage }: { onMessage?: (msg: string) => void
     }
   };
 
+  /** Dosyayı önce doğrular ve özetler; geçersizse geri yükleme başlatılmaz. */
+  const prepareRestore = (fileName: string, content: string) => {
+    try {
+      setPendingSummary(summarizeBackupFile(content));
+      setPendingFileName(fileName);
+      setPendingContent(content);
+      setRestoreError(null);
+      setConfirmRestore(true);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setRestoreError(msg);
+      setConfirmRestore(false);
+      addToast(msg, "error");
+    }
+  };
+
   const handleRestore = async () => {
     if (!selectedFile) return;
-    setPendingFileName(selectedFile);
-    setPendingContent(null);
-    setConfirmRestore(true);
+    try {
+      setRestoring(true);
+      prepareRestore(selectedFile, await readTextFileFromDownloads(selectedFile));
+    } catch (err: unknown) {
+      setRestoreError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setRestoring(false);
+    }
   };
 
   const handleManualFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -84,13 +113,10 @@ export function BackupSection({ onMessage }: { onMessage?: (msg: string) => void
     if (!file) return;
 
     const reader = new FileReader();
-    reader.onload = async (e) => {
+    reader.onload = (e) => {
       const content = e.target?.result as string;
       if (!content) return;
-
-      setPendingFileName(file.name);
-      setPendingContent(content);
-      setConfirmRestore(true);
+      prepareRestore(file.name, content);
     };
     reader.readAsText(file);
     event.target.value = "";
@@ -106,18 +132,21 @@ export function BackupSection({ onMessage }: { onMessage?: (msg: string) => void
 
       if (!content) throw new Error("Yedekleme içeriği okunamadı veya boş.");
 
-      await importDatabase(content);
+      const { summary, safetyBackupPath: safetyPath } = await importDatabase(content);
 
+      setSafetyBackupPath(safetyPath);
       setIsRestoreOpen(false);
       setConfirmRestore(false);
-      showMessage("Veritabanı başarıyla geri yüklendi! Sayfa yenileniyor...");
-      setTimeout(() => {
-        window.location.reload();
-      }, 2000);
+      addToast(
+        `Geri yüklendi: ${summary.workers} çalışan, ${summary.attendance} puantaj kaydı. Sayfa yenileniyor...`,
+        "success",
+      );
+      setTimeout(() => window.location.reload(), 2000);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
-      setRestoreError("Geri yükleme hatası: " + msg);
+      setRestoreError(msg);
       setConfirmRestore(false);
+      addToast(`Geri yükleme yapılmadı: ${msg}`, "error");
     } finally {
       setRestoring(false);
     }
@@ -135,23 +164,23 @@ export function BackupSection({ onMessage }: { onMessage?: (msg: string) => void
     if (!pendingDeleteFile) return;
     try {
       setRestoring(true);
-      const { remove, BaseDirectory } = await import("@tauri-apps/plugin-fs");
-      await remove(pendingDeleteFile, { baseDir: BaseDirectory.Download });
+      await removeFileFromDownloads(pendingDeleteFile);
 
-      executeQuery(
-        "INSERT INTO audit_logs (action_type, entity_table, record_id, new_data) VALUES (?, ?, ?, ?)",
-        ["DELETE_FILE", "backup", 0, `file=${pendingDeleteFile}`],
+      await auditLogRepository.write(
+        "DELETE_FILE",
+        "backup",
+        0,
+        JSON.stringify({ file: pendingDeleteFile }),
       );
 
-      const files = await listBackupFiles();
-      setBackupFiles(files);
-
+      setBackupFiles(await listBackupFiles());
       setConfirmDelete(false);
       setPendingDeleteFile(null);
-      showMessage("Yedekleme dosyası cihazdan kalıcı olarak silindi.");
+      addToast("Yedekleme dosyası cihazdan silindi.", "success");
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
-      setRestoreError("Dosya silme hatası: " + msg);
+      setRestoreError(`Dosya silinemedi: ${msg}`);
+      addToast(`Dosya silinemedi: ${msg}`, "error");
       setConfirmDelete(false);
     } finally {
       setRestoring(false);
@@ -205,7 +234,7 @@ export function BackupSection({ onMessage }: { onMessage?: (msg: string) => void
             <DownloadCloud className="w-7 h-7" />
             <div className="text-xs font-black text-center leading-tight">
               Yedek Al <br />
-              <span className="text-[9px] opacity-70 font-bold">(JSON İndir)</span>
+              <span className="text-[10px] opacity-70 font-bold">(JSON İndir)</span>
             </div>
           </Button>
 
@@ -218,13 +247,19 @@ export function BackupSection({ onMessage }: { onMessage?: (msg: string) => void
             <UploadCloud className="w-7 h-7 text-rose-500 group-hover:text-rose-600" />
             <div className="text-xs font-black text-center leading-tight group-hover:text-rose-600">
               Yedekten Dön <br />
-              <span className="text-[9px] text-rose-500/70 font-bold">(Verileri Ezer)</span>
+              <span className="text-[10px] text-rose-500/70 font-bold">(Verileri Ezer)</span>
             </div>
           </Button>
         </div>
-        <p className="text-[9px] text-center font-bold text-muted-foreground/60 px-4">
-          Yedekten dönersen cihazdaki her şey silinir, dosyadaki veriler yüklenir. Dikkatli ol!
+        <p className="text-[11px] text-center font-bold text-muted-foreground/70 px-4">
+          Yedekten dönerken mevcut verinin otomatik yedeği alınır, ardından dosyadaki veriler tek
+          seferde yüklenir.
         </p>
+        {safetyBackupPath && (
+          <p className="text-[10px] text-center font-mono text-muted-foreground/70 px-4 break-all">
+            Son otomatik yedek: {safetyBackupPath}
+          </p>
+        )}
       </div>
 
       {/* Yedekten Dön Dialog */}
@@ -238,6 +273,7 @@ export function BackupSection({ onMessage }: { onMessage?: (msg: string) => void
             setPendingContent(null);
             setPendingFileName(null);
             setPendingDeleteFile(null);
+            setPendingSummary(null);
           }
         }}
       >
@@ -255,16 +291,47 @@ export function BackupSection({ onMessage }: { onMessage?: (msg: string) => void
                   <p className="text-xs text-muted-foreground mt-1 max-w-70 mx-auto leading-relaxed">
                     Aşağıdaki yedekleme dosyası yüklenmek üzere seçildi:
                   </p>
-                  <div className="mt-2.5 px-3 py-2 rounded-xl bg-muted text-[10px] font-mono break-all inline-block font-bold border max-w-full">
+                  <div className="mt-2.5 px-3 py-2 rounded-xl bg-muted text-[11px] font-mono break-all inline-block font-bold border max-w-full">
                     {pendingFileName}
                   </div>
                 </div>
               </div>
 
+              {/* Dosya doğrulandı — ne yükleneceği önceden gösterilir. */}
+              {pendingSummary && (
+                <div className="rounded-xl border bg-card divide-y">
+                  {[
+                    {
+                      label: "Yedek tarihi",
+                      value: pendingSummary.exported_at
+                        ? new Date(pendingSummary.exported_at).toLocaleString("tr-TR")
+                        : "—",
+                    },
+                    { label: "Biçim sürümü", value: `v${pendingSummary.version}` },
+                    { label: "Çalışan", value: `${pendingSummary.workers}` },
+                    { label: "Puantaj kaydı", value: `${pendingSummary.attendance}` },
+                    { label: "Gün verisi", value: `${pendingSummary.daily_metrics}` },
+                    { label: "Ödeme", value: `${pendingSummary.payments}` },
+                  ].map((row) => (
+                    <div
+                      key={row.label}
+                      className="flex items-center justify-between px-3 py-2 text-[11px]"
+                    >
+                      <span className="font-bold text-muted-foreground">{row.label}</span>
+                      <span className="font-black font-mono">{row.value}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+
               <div className="p-4 rounded-xl border-2 border-rose-200 dark:border-rose-500/20 bg-rose-50/50 dark:bg-rose-500/5 space-y-2">
-                <p className="text-[10px] font-bold text-rose-700 dark:text-rose-400 leading-relaxed text-center">
-                  ⚠️ DİKKAT: Bu işlem mevcut tüm çalışan, çalışma durumu, ödeme ve geçmiş
-                  kayıtlarınızı KALICI OLARAK SİLER. Geri dönüşü yok!
+                <p className="text-[11px] font-bold text-rose-700 dark:text-rose-400 leading-relaxed text-center">
+                  ⚠️ Mevcut tüm çalışan, puantaj, ödeme ve geçmiş kayıtları bu dosyadakilerle
+                  değiştirilecek.
+                </p>
+                <p className="text-[11px] font-semibold text-emerald-700 dark:text-emerald-400 leading-relaxed text-center">
+                  Silmeden hemen önce mevcut verinizin otomatik bir yedeği İndirilenler klasörüne
+                  kaydedilir. İşlem yarıda kalırsa hiçbir şey değişmez.
                 </p>
               </div>
 
@@ -334,7 +401,7 @@ export function BackupSection({ onMessage }: { onMessage?: (msg: string) => void
                 <div className="space-y-1.5">
                   <label
                     htmlFor="delete-code-input"
-                    className="text-[9px] font-bold text-muted-foreground uppercase ml-1"
+                    className="text-[10px] font-bold text-muted-foreground uppercase ml-1"
                   >
                     Silmek için yukarıdaki kodu girin
                   </label>

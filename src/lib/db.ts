@@ -1,19 +1,7 @@
 import Database from "@tauri-apps/plugin-sql";
-import {
-  DROP_TRIGGERS,
-  CREATE_WORKERS_INSERT_LOG,
-  CREATE_WORKERS_UPDATE_LOG,
-  CREATE_WORKERS_DELETE_LOG,
-  CREATE_ATTENDANCE_INSERT_LOG,
-  CREATE_ATTENDANCE_UPDATE_LOG,
-  CREATE_ATTENDANCE_DELETE_LOG,
-  CREATE_DAILY_METRICS_INSERT_LOG,
-  CREATE_DAILY_METRICS_UPDATE_LOG,
-  CREATE_DAILY_METRICS_DELETE_LOG,
-  CREATE_PAYMENTS_INSERT_LOG,
-  CREATE_PAYMENTS_UPDATE_LOG,
-  CREATE_PAYMENTS_DELETE_LOG,
-} from "../schema/triggers";
+import { DROP_TRIGGERS, CREATE_TRIGGERS, TRIGGER_SCHEMA_VERSION } from "../schema/triggers";
+import { buildTransactionScript } from "./sql";
+import { reportError } from "./errorMonitoring";
 
 interface DbResult {
   rowsAffected: number;
@@ -28,7 +16,33 @@ let dbInstance: DatabaseInstance | null = null;
 let loadPromise: Promise<DatabaseInstance> | null = null;
 
 /**
- * SQLite veritabanı bağlantısını başlatır / döndürür
+ * Denetim tetikleyicileri kurulamadıysa dolu olur. Ayarlar ekranı bu değeri
+ * kullanıcıya gösterir — sessizce denetimsiz çalışmayı engellemek için.
+ */
+let triggerSetupError: string | null = null;
+export const getTriggerSetupError = (): string | null => triggerSetupError;
+
+/**
+ * Tetikleyicileri yalnızca tanımlar değiştiğinde yeniden kurar.
+ * Sürüm damgası `PRAGMA user_version` içinde tutulur.
+ */
+const ensureTriggers = async (d: DatabaseInstance): Promise<void> => {
+  const rows = await d.select<{ user_version: number }>("PRAGMA user_version;");
+  const installed = Number(rows?.[0]?.user_version ?? 0);
+
+  if (installed === TRIGGER_SCHEMA_VERSION) return;
+
+  const script = buildTransactionScript([
+    ...DROP_TRIGGERS,
+    ...CREATE_TRIGGERS,
+    `PRAGMA user_version = ${TRIGGER_SCHEMA_VERSION}`,
+  ]);
+
+  await d.execute(script);
+};
+
+/**
+ * SQLite veritabanı bağlantısını başlatır / döndürür.
  */
 export const getDb = async (): Promise<DatabaseInstance> => {
   if (dbInstance) return dbInstance;
@@ -38,49 +52,40 @@ export const getDb = async (): Promise<DatabaseInstance> => {
       .load("sqlite:is_takip_v3.db")
       .then(async (db: unknown): Promise<DatabaseInstance> => {
         const d = db as DatabaseInstance;
+
         try {
           await d.execute("PRAGMA journal_mode=WAL;");
         } catch {
-          // WAL mode not critical
+          // WAL kritik değil, varsayılan journal modu ile devam edilir.
         }
 
         try {
-          for (const sql of DROP_TRIGGERS) {
-            await d.execute(sql);
-          }
-
-          await d.execute(CREATE_WORKERS_INSERT_LOG);
-          await d.execute(CREATE_WORKERS_UPDATE_LOG);
-          await d.execute(CREATE_WORKERS_DELETE_LOG);
-          await d.execute(CREATE_ATTENDANCE_INSERT_LOG);
-          await d.execute(CREATE_ATTENDANCE_UPDATE_LOG);
-          await d.execute(CREATE_ATTENDANCE_DELETE_LOG);
-          await d.execute(CREATE_DAILY_METRICS_INSERT_LOG);
-          await d.execute(CREATE_DAILY_METRICS_UPDATE_LOG);
-          await d.execute(CREATE_DAILY_METRICS_DELETE_LOG);
-          await d.execute(CREATE_PAYMENTS_INSERT_LOG);
-          await d.execute(CREATE_PAYMENTS_UPDATE_LOG);
-          await d.execute(CREATE_PAYMENTS_DELETE_LOG);
-        } catch {
-          // Trigger setup failed, but DB still works
+          await ensureTriggers(d);
+          triggerSetupError = null;
+        } catch (err: unknown) {
+          // Tetikleyici kurulumu başarısız oldu. Uygulama çalışmaya devam eder
+          // ama denetim kaydı ve geri alma özelliği güvenilir değildir —
+          // bu yüzden hata yutulmaz, saklanır ve Ayarlar ekranında gösterilir.
+          triggerSetupError = err instanceof Error ? err.message : String(err);
+          reportError(err instanceof Error ? err : new Error(triggerSetupError), {
+            scope: "trigger-setup",
+          });
         }
 
         dbInstance = d;
         return dbInstance;
       })
       .catch((err: unknown) => {
-        alert("Veritabanı yükleme hatası: " + err);
+        loadPromise = null;
         throw err;
       });
   }
 
-  return loadPromise!;
+  return loadPromise;
 };
 
 /**
- * Veritabanında bir okuma (SELECT) sorgusu çalıştırır
- * @param query Çalıştırılacak SQL sorgusu
- * @param values Sorguya bağlanacak parametre dizisi
+ * Veritabanında bir okuma (SELECT) sorgusu çalıştırır.
  */
 export const fetchQuery = async <T>(query: string, values: unknown[] = []): Promise<T[]> => {
   const db = await getDb();
@@ -88,11 +93,32 @@ export const fetchQuery = async <T>(query: string, values: unknown[] = []): Prom
 };
 
 /**
- * Veritabanında bir yazma (INSERT, UPDATE, DELETE) sorgusu çalıştırır
- * @param query Çalıştırılacak SQL sorgusu
- * @param values Sorguya bağlanacak parametre dizisi
+ * Veritabanında bir yazma (INSERT, UPDATE, DELETE) sorgusu çalıştırır.
  */
 export const executeQuery = async (query: string, values: unknown[] = []): Promise<DbResult> => {
   const db = await getDb();
   return db.execute(query, values);
+};
+
+/**
+ * Birden çok ifadeyi tek bir transaction içinde, tek bir bağlantıda çalıştırır.
+ * Ya hepsi uygulanır ya hiçbiri.
+ *
+ * Bağlama parametresi kullanılamaz — değerler `sqlLiteral` ile gömülmelidir.
+ */
+export const executeTransaction = async (statements: string[]): Promise<void> => {
+  if (statements.length === 0) return;
+  const db = await getDb();
+
+  try {
+    await db.execute(buildTransactionScript(statements));
+  } catch (err) {
+    // Hata anında açık kalmış olabilecek transaction'ı kapat (best-effort).
+    try {
+      await db.execute("ROLLBACK;");
+    } catch {
+      // Aktif transaction yoksa SQLite hata verir; bu beklenen bir durum.
+    }
+    throw err;
+  }
 };

@@ -1,3 +1,14 @@
+/**
+ * Denetim kaydının veri alanını ayrıştırır.
+ *
+ * İki format desteklenir:
+ *  - JSON (yeni kayıtlar, `json_object` ile yazılır)
+ *  - `anahtar=değer|anahtar=değer` (eski kayıtlar — geriye dönük uyumluluk)
+ *
+ * Dönüş her zaman düz bir `Record<string, string>`; JSON içindeki iç içe
+ * değerler (örn. `atts` dizisi) metne çevrilerek saklanır, çağıran taraf
+ * gerekiyorsa `JSON.parse` eder.
+ */
 export function parseLogData(data: string | null): Record<string, string> | null {
   if (!data) return null;
   const trimmed = data.trim();
@@ -5,9 +16,17 @@ export function parseLogData(data: string | null): Record<string, string> | null
 
   if (trimmed.startsWith("{")) {
     try {
-      return JSON.parse(trimmed);
+      const parsed: unknown = JSON.parse(trimmed);
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        const flat: Record<string, string> = {};
+        for (const [key, value] of Object.entries(parsed as Record<string, unknown>)) {
+          if (value === null || value === undefined) continue;
+          flat[key] = typeof value === "string" ? value : JSON.stringify(value);
+        }
+        return flat;
+      }
     } catch {
-      /* fall through */
+      /* JSON değilse aşağıdaki formatlara düşülür */
     }
   }
 
@@ -35,4 +54,50 @@ export function parseLogData(data: string | null): Record<string, string> | null
   if (prodMatch) return { production: prodMatch[1] };
 
   return { _raw: trimmed };
+}
+
+export interface AttendanceSnapshotEntry {
+  id: number;
+  name: string;
+  status: string;
+}
+
+/**
+ * Gün özetindeki personel anlık görüntüsünü ayrıştırır.
+ *
+ * Yeni format: `[{"id":1,"name":"Ahmet","status":"FULL"}, ...]` (JSON)
+ * Eski format: `1:Ahmet:FULL, 2:Mehmet:YOK`
+ *
+ * Eski format, isimde `:` veya `,` geçtiğinde bozulabilir; bu yüzden yeni
+ * kayıtlar JSON olarak yazılır. Ayrıştırıcı ikisini de okur.
+ */
+export function parseAttendanceSnapshot(raw: string | null | undefined): AttendanceSnapshotEntry[] {
+  if (!raw) return [];
+  const trimmed = raw.trim();
+  if (!trimmed) return [];
+
+  if (trimmed.startsWith("[")) {
+    try {
+      const parsed: unknown = JSON.parse(trimmed);
+      if (Array.isArray(parsed)) {
+        return parsed
+          .filter((e): e is Record<string, unknown> => !!e && typeof e === "object")
+          .map((e) => ({
+            id: Number(e.id),
+            name: String(e.name ?? ""),
+            status: String(e.status ?? "YOK"),
+          }))
+          .filter((e) => Number.isFinite(e.id));
+      }
+    } catch {
+      /* eski formata düşülür */
+    }
+  }
+
+  return trimmed
+    .split(",")
+    .map((part) => part.trim().split(":"))
+    .filter((sub) => sub.length >= 3)
+    .map((sub) => ({ id: Number(sub[0]), name: sub[1], status: sub[2] }))
+    .filter((e) => Number.isFinite(e.id));
 }

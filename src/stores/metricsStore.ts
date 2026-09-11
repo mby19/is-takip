@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import { metricsRepository } from "../repositories/metricsRepository";
 import type { DailyMetric } from "../types";
-import { useToastStore } from "./toastStore";
+import { reportError } from "../lib/errorMonitoring";
 
 interface MetricsState {
   metrics: DailyMetric[];
@@ -18,7 +18,7 @@ interface MetricsState {
   ) => Promise<void>;
 }
 
-export const useMetricsStore = create<MetricsState>((set) => ({
+export const useMetricsStore = create<MetricsState>((set, get) => ({
   metrics: [],
   isLoading: false,
   error: null,
@@ -49,6 +49,9 @@ export const useMetricsStore = create<MetricsState>((set) => ({
     }
   },
 
+  /**
+   * Günlük veriyi tek atomik UPSERT ile yazar ve hatayı yukarı fırlatır.
+   */
   updateMetrics: async (
     date: string,
     production_amount: number,
@@ -56,37 +59,43 @@ export const useMetricsStore = create<MetricsState>((set) => ({
     extra_expenses: number,
     is_holiday: boolean,
   ) => {
+    const dStr = String(date).trim();
+    const p = Number(production_amount) || 0;
+    const t = Number(total_earned) || 0;
+    const e = Number(extra_expenses) || 0;
+
+    const previous = get().metrics;
+
     try {
-      const p = Number(production_amount) || 0;
-      const t = Number(total_earned) || 0;
-      const e = Number(extra_expenses) || 0;
+      await metricsRepository.upsert(dStr, p, t, e, is_holiday);
 
-      const existing = await metricsRepository.findIdByDate(date);
-
-      if (existing.length > 0) {
-        await metricsRepository.update(date, p, t, e, is_holiday);
-      } else {
-        await metricsRepository.insert(date, p, t, e, is_holiday);
-      }
-
-      // Optimistic UI
+      const rows = await metricsRepository.findByDate(dStr);
       set((state) => ({
+        error: null,
         metrics: [
-          ...state.metrics.filter((m) => String(m.date).trim() !== String(date).trim()),
-          {
-            id: existing.length > 0 ? existing[0].id : 0,
-            date: String(date).trim(),
-            production_amount: p,
-            total_earned: t,
-            extra_expenses: e,
-            is_holiday,
-          } as DailyMetric,
+          ...state.metrics.filter((m) => String(m.date).trim() !== dStr),
+          ...(rows.length > 0
+            ? [rows[0]]
+            : [
+                {
+                  id: 0,
+                  date: dStr,
+                  production_amount: p,
+                  total_earned: t,
+                  extra_expenses: e,
+                  is_holiday,
+                } as DailyMetric,
+              ]),
         ],
       }));
     } catch (error: unknown) {
       const msg = error instanceof Error ? error.message : String(error);
-      set({ error: msg });
-      useToastStore.getState().addToast("Metrik güncelleme hatası: " + msg, "error");
+      set({ metrics: previous, error: msg });
+      reportError(error instanceof Error ? error : new Error(msg), {
+        scope: "updateMetrics",
+        date: dStr,
+      });
+      throw error;
     }
   },
 }));

@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { paymentRepository } from "../repositories/paymentRepository";
 import type { Payment } from "../types";
+import { reportError } from "../lib/errorMonitoring";
 
 interface PaymentState {
   payments: Payment[];
@@ -36,7 +37,10 @@ export const usePaymentStore = create<PaymentState>((set, get) => ({
       await paymentRepository.create(worker_id, amount, date, description);
       await get().fetchWorkerPayments(worker_id);
     } catch (error: unknown) {
-      set({ error: error instanceof Error ? error.message : String(error) });
+      const msg = error instanceof Error ? error.message : String(error);
+      set({ error: msg });
+      reportError(error instanceof Error ? error : new Error(msg), { scope: "addPayment" });
+      throw error;
     }
   },
 
@@ -45,7 +49,10 @@ export const usePaymentStore = create<PaymentState>((set, get) => ({
       await paymentRepository.remove(id);
       await get().fetchWorkerPayments(worker_id);
     } catch (error: unknown) {
-      set({ error: error instanceof Error ? error.message : String(error) });
+      const msg = error instanceof Error ? error.message : String(error);
+      set({ error: msg });
+      reportError(error instanceof Error ? error : new Error(msg), { scope: "deletePayment" });
+      throw error;
     }
   },
 }));

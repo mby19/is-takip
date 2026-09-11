@@ -46,14 +46,14 @@ export function WorkersScreen({ onWorkerClick }: WorkersScreenProps) {
 
   return (
     <div className="flex flex-col h-full overflow-hidden animate-scale-in">
-      <header className="pt-14 pb-4 px-5 bg-card border-b shrink-0 flex justify-between items-center">
+      <header className="pt-safe-header pb-4 px-5 bg-card border-b shrink-0 flex justify-between items-center">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center">
             <Users className="w-5 h-5 text-primary" />
           </div>
           <div>
             <h1 className="text-lg font-black tracking-tight">Ekip</h1>
-            <p className="text-[9px] font-bold text-muted-foreground tracking-wider uppercase">
+            <p className="text-[10px] font-bold text-muted-foreground tracking-wider uppercase">
               {activeWorkers.length} kişi aktif
             </p>
           </div>
@@ -72,7 +72,7 @@ export function WorkersScreen({ onWorkerClick }: WorkersScreenProps) {
           </button>
         </div>
       </header>
-      <div className="flex-1 overflow-y-auto no-scrollbar p-4 space-y-2.5 pb-28">
+      <div className="flex-1 overflow-y-auto no-scrollbar p-4 space-y-2.5 pb-safe-content">
         {workerError && (
           <div className="p-4 rounded-2xl bg-rose-50 dark:bg-rose-500/10 border border-rose-100 dark:border-rose-500/20 text-rose-600 dark:text-rose-400 text-xs font-bold animate-slide-up">
             Hata: {workerError}
@@ -106,7 +106,7 @@ export function WorkersScreen({ onWorkerClick }: WorkersScreenProps) {
                 <div>
                   <p className="font-bold text-sm tracking-tight">{w.name}</p>
                   <p
-                    className={`text-[9px] uppercase tracking-wider font-bold ${w.worker_type === "ORTAK" ? "text-amber-600 dark:text-amber-500" : "text-primary"}`}
+                    className={`text-[10px] uppercase tracking-wider font-bold ${w.worker_type === "ORTAK" ? "text-amber-600 dark:text-amber-500" : "text-primary"}`}
                   >
                     {w.worker_type === "ORTAK" ? "Ortak" : "Yevmiyeli"}
                   </p>
@@ -117,7 +117,7 @@ export function WorkersScreen({ onWorkerClick }: WorkersScreenProps) {
                   <div className="text-primary font-black text-lg font-mono tracking-tight">
                     ₺{w.daily_wage}
                   </div>
-                  <div className="text-[8px] uppercase text-muted-foreground font-bold tracking-widest">
+                  <div className="text-[10px] uppercase text-muted-foreground font-bold tracking-widest">
                     Yevmiye
                   </div>
                 </div>
@@ -161,7 +161,7 @@ export function WorkersScreen({ onWorkerClick }: WorkersScreenProps) {
                         <p className="font-bold text-sm tracking-tight text-muted-foreground">
                           {w.name}
                         </p>
-                        <p className="text-[9px] uppercase tracking-wider font-bold text-muted-foreground/60">
+                        <p className="text-[10px] uppercase tracking-wider font-bold text-muted-foreground/60">
                           {w.worker_type === "ORTAK" ? "Ortak" : "Yevmiyeli"}
                         </p>
                       </div>

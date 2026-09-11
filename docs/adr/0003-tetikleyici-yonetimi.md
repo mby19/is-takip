@@ -28,7 +28,7 @@ Bu ikili yapı şu sorunlara yol açıyordu:
 ### Gerekçe
 
 1. **JS tarafı daha esnek**: Trigger'lar uygulama mantığına sıkı sıkıya bağlı. JS'de değiştirmek, Rust derlemesi gerektirmez.
-2. **Boot-time doğrulama**: `db.ts` her açılışta trigger'ları drop edip yeniden oluşturarak her zaman en güncel halinin çalışmasını garanti eder.
+2. **Boot-time doğrulama**: `db.ts` trigger'ların en güncel halinin kurulu olmasını garanti eder.
 3. **Migration karmaşasını önler**: Her trigger değişikliği için migration yazmak yerine, tek bir JS dosyası güncellenir.
 
 ### Rust Migration'larının Yeni Rolü
@@ -52,3 +52,17 @@ Trigger ekleme/değiştirme amaçlı yeni migration **eklenmeyecektir**. Mevcut 
 - `src/schema/triggers.ts` — Tüm trigger'ların kaynağı
 - `src/lib/db.ts` — Boot'ta trigger'ları drop/create eden kod
 - `src-tauri/src/db.rs` — Tablo şeması ve index migration'ları
+
+## Güncelleme (2026-09-11) — ADR-0004
+
+Boot davranışı değişti: trigger'lar artık **her açılışta değil**, yalnızca tanım
+sürümü (`TRIGGER_SCHEMA_VERSION`, `PRAGMA user_version` içinde saklanır)
+değiştiğinde yeniden kurulur ve kurulum tek bir transaction'da yapılır.
+
+Sebep: her açılışta DROP + CREATE yapmak, uygulama bu iki adım arasında
+kapanırsa veritabanını **denetim kaydı olmadan** bırakıyordu ve hata
+`catch {}` ile yutulduğu için kullanıcı bunu hiç fark etmiyordu. Artık hata
+yutulmaz; `getTriggerSetupError()` ile Ayarlar ekranında görünür uyarı çıkar.
+
+Trigger içerikleri de pipe-delimited metinden `json_object()` JSON'a geçti —
+gerekçe ve geriye dönük uyumluluk için bkz. ADR-0004.

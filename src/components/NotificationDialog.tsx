@@ -108,7 +108,7 @@ export function NotificationDialog({ isOpen, onClose }: NotificationDialogProps)
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center justify-between">
                         <p className="text-xs font-black tracking-tight">{formatAction(log)}</p>
-                        <span className="text-[9px] text-muted-foreground font-bold whitespace-nowrap ml-2">
+                        <span className="text-[10px] text-muted-foreground font-bold whitespace-nowrap ml-2">
                           {format(parseISO(log.created_at), "HH:mm", { locale: tr })}
                         </span>
                       </div>

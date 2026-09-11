@@ -17,6 +17,7 @@
     "fs:allow-download-read-recursive",
     "fs:allow-download-write",
     "fs:allow-download-write-recursive",
-    "fs:allow-stat"
+    "fs:allow-stat",
+    "fs:allow-remove"
   ]
 }

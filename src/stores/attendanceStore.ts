@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import { attendanceRepository } from "../repositories/attendanceRepository";
-import type { Attendance } from "../types";
-import { useToastStore } from "./toastStore";
+import type { Attendance, AttendanceStatus } from "../types";
+import { reportError } from "../lib/errorMonitoring";
 
 interface AttendanceState {
   attendances: Attendance[];
@@ -12,12 +12,11 @@ interface AttendanceState {
   markAttendance: (
     worker_id: number,
     date: string,
-    status: "FULL" | "HALF" | "ABSENT" | "HOLIDAY" | null,
-    workerName?: string,
+    status: AttendanceStatus | null,
   ) => Promise<void>;
 }
 
-export const useAttendanceStore = create<AttendanceState>((set) => ({
+export const useAttendanceStore = create<AttendanceState>((set, get) => ({
   attendances: [],
   isLoading: false,
   error: null,
@@ -48,16 +47,20 @@ export const useAttendanceStore = create<AttendanceState>((set) => ({
     }
   },
 
-  markAttendance: async (
-    worker_id: number,
-    date: string,
-    status: "FULL" | "HALF" | "ABSENT" | "HOLIDAY" | null,
-    _workerName?: string,
-  ) => {
+  /**
+   * Puantaj kaydeder.
+   *
+   * Önce iyimser (optimistic) güncelleme yapılır; yazma başarısız olursa
+   * ekrandaki değer eski haline döndürülür VE hata yukarı fırlatılır.
+   * Hatanın yutulması, kullanıcının kaydedilmemiş bir veriyi kaydedilmiş
+   * sanmasına yol açıyordu.
+   */
+  markAttendance: async (worker_id: number, date: string, status: AttendanceStatus | null) => {
     const wId = Number(worker_id);
     const dStr = String(date).trim();
 
-    // OPTIMISTIC UI: Önce state'i güncelle (Anında tepki)
+    const previous = get().attendances;
+
     set((state) => {
       const filtered = state.attendances.filter(
         (a) => !(Number(a.worker_id) === wId && String(a.date).trim() === dStr),
@@ -78,8 +81,13 @@ export const useAttendanceStore = create<AttendanceState>((set) => ({
         await attendanceRepository.upsert(wId, dStr, status);
       }
     } catch (error: unknown) {
-      const errorMsg = error instanceof Error ? error.message : String(error);
-      useToastStore.getState().addToast("Kayıt hatası: " + errorMsg, "error");
+      set({ attendances: previous });
+      reportError(error instanceof Error ? error : new Error(String(error)), {
+        scope: "markAttendance",
+        worker_id: wId,
+        date: dStr,
+      });
+      throw error;
     }
   },
 }));

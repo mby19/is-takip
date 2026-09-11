@@ -29,3 +29,4 @@ dist-ssr
 ts_errors.txt
 .warden/
 .omo/
+.claude/

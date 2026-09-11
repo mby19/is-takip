@@ -1,7 +1,10 @@
 import { create } from "zustand";
 import { auditLogRepository } from "../repositories/auditLogRepository";
+import { executeTransaction } from "../lib/db";
+import { sqlLiteral } from "../lib/sql";
 import type { AuditLog } from "../types";
 import { getRevertStrategy, createRevertContext } from "./revertStrategies";
+import { reportError } from "../lib/errorMonitoring";
 
 interface AuditLogState {
   logs: AuditLog[];
@@ -30,10 +33,11 @@ const syncStoresAfterRevert = async (
   } else if (log.entity_table === "payments") {
     const workerId = oldData?.worker_id || newData?.worker_id;
     if (workerId) {
-      await usePaymentStore.getState().fetchWorkerPayments(parseInt(workerId));
+      await usePaymentStore.getState().fetchWorkerPayments(parseInt(workerId, 10));
     }
   } else if (log.entity_table === "workers") {
     await useWorkerStore.getState().fetchWorkers();
+    await useWorkerStore.getState().fetchRateHistory();
   }
 };
 
@@ -52,7 +56,19 @@ export const useAuditLogStore = create<AuditLogState>((set, get) => ({
     }
   },
 
+  /**
+   * Bir denetim kaydını geri alır.
+   *
+   * Tüm adımlar tek transaction içinde uygulanır — geri alma yarıda kalıp
+   * tutarsız duruma yol açamaz. Kayıt silinmez, `reverted_at` ile işaretlenir
+   * ve geri alma işleminin kendisi ayrı bir REVERT kaydı olarak yazılır;
+   * böylece denetim izi eksiksiz kalır.
+   */
   revertLog: async (log: AuditLog): Promise<boolean> => {
+    if (log.reverted_at) {
+      throw new Error("Bu işlem daha önce geri alınmış.");
+    }
+
     try {
       const strategy = getRevertStrategy(log.action_type, log.entity_table);
       if (!strategy) {
@@ -60,16 +76,29 @@ export const useAuditLogStore = create<AuditLogState>((set, get) => ({
       }
 
       const ctx = createRevertContext(log);
-      await strategy.execute(ctx);
+      const statements = await strategy.execute(ctx);
 
-      await auditLogRepository.removeById(log.id);
+      const revertNote = JSON.stringify({
+        reverted_log_id: log.id,
+        action_type: log.action_type,
+        entity_table: log.entity_table,
+        record_id: log.record_id,
+      });
+
+      await executeTransaction([
+        ...statements,
+        `UPDATE audit_logs SET reverted_at = DATETIME('now', 'localtime') WHERE id = ${sqlLiteral(log.id)}`,
+        `INSERT INTO audit_logs (action_type, entity_table, record_id, new_data) VALUES ('REVERT', ${sqlLiteral(log.entity_table)}, ${sqlLiteral(log.record_id)}, ${sqlLiteral(revertNote)})`,
+      ]);
 
       await syncStoresAfterRevert(log, ctx.oldData, ctx.newData);
-
       await get().fetchLogs();
       return true;
     } catch (error: unknown) {
-      console.error("[AuditLog] Revert error:", error);
+      reportError(error instanceof Error ? error : new Error(String(error)), {
+        scope: "revertLog",
+        log_id: log.id,
+      });
       throw error;
     }
   },

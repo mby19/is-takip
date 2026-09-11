@@ -1,5 +1,27 @@
-@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;700&display=swap");
 @import "tailwindcss";
+
+/*
+ * Fontlar yerelden yüklenir. Uzak Google Fonts isteği paketlenmiş uygulamada
+ * CSP tarafından engellendiği için sessizce sistem fontuna düşüyordu.
+ */
+@font-face {
+  font-family: "Inter";
+  src: url("/fonts/Inter-Regular.ttf") format("truetype");
+  font-weight: 400 600;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Inter";
+  src: url("/fonts/Inter-Bold.ttf") format("truetype");
+  font-weight: 700;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Inter";
+  src: url("/fonts/Inter-Black.ttf") format("truetype");
+  font-weight: 800 900;
+  font-display: swap;
+}
 
 @plugin "tailwindcss-animate";
 
@@ -536,5 +558,21 @@
     background: rgba(255, 255, 255, 0.8);
     backdrop-filter: blur(16px) saturate(150%);
     -webkit-backdrop-filter: blur(16px) saturate(150%);
+  }
+}
+
+@layer utilities {
+  /* Çentik ve jest çubuğu olan cihazlarda sistem alanlarıyla çakışmayı önler. */
+  .pt-safe-header {
+    padding-top: calc(3.5rem + env(safe-area-inset-top, 0px));
+  }
+  .pb-safe-nav {
+    padding-bottom: calc(1.5rem + env(safe-area-inset-bottom, 0px));
+  }
+  .pb-safe-content {
+    padding-bottom: calc(7rem + env(safe-area-inset-bottom, 0px));
+  }
+  .pt-safe {
+    padding-top: env(safe-area-inset-top, 0px);
   }
 }

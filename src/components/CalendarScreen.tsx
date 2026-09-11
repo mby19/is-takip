@@ -15,7 +15,7 @@ export function CalendarScreen({ onDayClick, onWorkerClick }: CalendarScreenProp
 
   return (
     <div className="flex flex-col h-full overflow-hidden animate-scale-in">
-      <header className="pt-14 pb-4 px-5 border-b bg-card shrink-0 flex justify-between items-center">
+      <header className="pt-safe-header pb-4 px-5 border-b bg-card shrink-0 flex justify-between items-center">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center">
             <ClipboardList className="w-5 h-5 text-primary" />

@@ -1,8 +1,9 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import { usePaymentStore } from "../stores/paymentStore";
-import { useWorkerStore } from "../stores/workerStore";
-import { useAttendanceStore } from "../stores/attendanceStore";
-import { useMetricsStore } from "../stores/metricsStore";
+import { useWorkerStore, RATE_HISTORY_EPOCH } from "../stores/workerStore";
+import { useToastStore } from "../stores/toastStore";
+import { attendanceRepository } from "../repositories/attendanceRepository";
+import { metricsRepository } from "../repositories/metricsRepository";
 import {
   ArrowLeft,
   Wallet,
@@ -13,25 +14,20 @@ import {
   CheckCircle2,
   MinusCircle,
   XCircle,
+  Palmtree,
   Plus,
   Edit2,
   Archive,
   DownloadCloud,
+  Trash2,
+  Scale,
 } from "lucide-react";
-import jsPDF from "jspdf";
-import "jspdf-autotable";
-import { registerTurkishFont } from "../lib/pdfFont";
-
-type JsPDFWithTable = jsPDF & {
-  autoTable: (options: Record<string, unknown>) => void;
-  lastAutoTable?: { finalY: number };
-};
-import { format, parseISO, startOfMonth, endOfMonth } from "date-fns";
+import { format, parseISO, startOfMonth } from "date-fns";
 import { tr } from "date-fns/locale";
-import type { Worker, Payment } from "../types";
+import type { Worker, Payment, Attendance, DailyMetric } from "../types";
 import { calculateWorkerStats } from "../utils/calculations";
+import { exportWorkerReport } from "../lib/workerReport";
 import { DetailSkeleton } from "./ui/skeleton";
-import { isTauri, saveFileToDownloads } from "../lib/tauri";
 import {
   Dialog,
   DialogContent,
@@ -49,37 +45,47 @@ interface WorkerDetailViewProps {
   onBack: () => void;
 }
 
+const todayStr = () => format(new Date(), "yyyy-MM-dd");
+
 export function WorkerDetailView({ worker, onBack }: WorkerDetailViewProps) {
   const payments = usePaymentStore((s) => s.payments);
   const fetchWorkerPayments = usePaymentStore((s) => s.fetchWorkerPayments);
   const addPayment = usePaymentStore((s) => s.addPayment);
+  const deletePayment = usePaymentStore((s) => s.deletePayment);
   const payLoading = usePaymentStore((s) => s.isLoading);
+
   const workers = useWorkerStore((s) => s.workers);
+  const rateHistory = useWorkerStore((s) => s.rateHistory);
   const fetchWorkers = useWorkerStore((s) => s.fetchWorkers);
   const archiveWorker = useWorkerStore((s) => s.archiveWorker);
   const updateWorker = useWorkerStore((s) => s.updateWorker);
   const updateWorkerStatus = useWorkerStore((s) => s.updateWorkerStatus);
-  const workersLoading = useWorkerStore((s) => s.isLoading);
-  const attendances = useAttendanceStore((s) => s.attendances);
-  const fetchAttendanceByDateRange = useAttendanceStore((s) => s.fetchAttendanceByDateRange);
-  const attLoading = useAttendanceStore((s) => s.isLoading);
-  const metrics = useMetricsStore((s) => s.metrics);
-  const fetchMetricsByDateRange = useMetricsStore((s) => s.fetchMetricsByDateRange);
-  const metricsLoading = useMetricsStore((s) => s.isLoading);
 
-  const isLoading = payLoading || workersLoading || attLoading || metricsLoading;
+  const addToast = useToastStore((s) => s.addToast);
+
+  /**
+   * Puantaj ve gün verisi burada YEREL tutulur.
+   * Global store'lar takvim ekranının içinde bulunduğu ayı taşıyor; buradan
+   * onları doldurmak iki ekranın birbirinin verisini ezmesine yol açıyordu.
+   */
+  const [allAttendance, setAllAttendance] = useState<Attendance[]>([]);
+  const [allMetrics, setAllMetrics] = useState<DailyMetric[]>([]);
+  const [dataLoading, setDataLoading] = useState(true);
 
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [payAmount, setPayAmount] = useState("");
   const [payDesc, setPayDesc] = useState("");
+  const [payDate, setPayDate] = useState(todayStr());
   const [isPayOpen, setIsPayOpen] = useState(false);
   const [isDeleteOpen, setIsDeleteOpen] = useState(false);
+  const [paymentToDelete, setPaymentToDelete] = useState<Payment | null>(null);
+  const [isExporting, setIsExporting] = useState(false);
 
-  // Edit States
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [editName, setEditName] = useState(worker.name);
   const [editWage, setEditWage] = useState(worker.daily_wage.toString());
   const [editType, setEditType] = useState(worker.worker_type);
+  const [effectiveFrom, setEffectiveFrom] = useState(todayStr());
 
   useEffect(() => {
     setEditName(worker.name);
@@ -87,109 +93,69 @@ export function WorkerDetailView({ worker, onBack }: WorkerDetailViewProps) {
     setEditType(worker.worker_type);
   }, [worker]);
 
-  useEffect(() => {
-    const startStr = format(startOfMonth(currentMonth), "yyyy-MM-dd");
-    const endStr = format(endOfMonth(currentMonth), "yyyy-MM-dd");
+  const reloadData = useCallback(async () => {
+    setDataLoading(true);
+    try {
+      const [attendance, metrics] = await Promise.all([
+        attendanceRepository.findAll(),
+        metricsRepository.findAll(),
+      ]);
+      setAllAttendance(attendance);
+      setAllMetrics(metrics);
+    } catch (err: unknown) {
+      addToast(`Veriler yüklenemedi: ${err instanceof Error ? err.message : String(err)}`, "error");
+    } finally {
+      setDataLoading(false);
+    }
+  }, [addToast]);
 
+  useEffect(() => {
     fetchWorkerPayments(worker.id);
     fetchWorkers();
-    fetchAttendanceByDateRange(startStr, endStr);
-    fetchMetricsByDateRange(startStr, endStr);
-  }, [worker.id, currentMonth]);
+    reloadData();
+  }, [worker.id, fetchWorkerPayments, fetchWorkers, reloadData]);
 
-  const stats = useMemo(() => {
-    return calculateWorkerStats(worker, currentMonth, metrics, attendances, workers, payments);
-  }, [currentMonth, metrics, attendances, workers, worker, payments]);
+  const stats = useMemo(
+    () =>
+      calculateWorkerStats(
+        worker,
+        currentMonth,
+        allMetrics,
+        allAttendance,
+        workers,
+        payments,
+        rateHistory,
+      ),
+    [worker, currentMonth, allMetrics, allAttendance, workers, payments, rateHistory],
+  );
+
+  const monthPayments = useMemo(
+    () => payments.filter((p) => String(p.date).startsWith(format(currentMonth, "yyyy-MM"))),
+    [payments, currentMonth],
+  );
+
+  const isLoading = dataLoading || payLoading;
 
   const handleExportPDF = async () => {
+    if (isExporting) return;
+    setIsExporting(true);
     try {
-      const doc = new jsPDF();
-      await registerTurkishFont(doc);
-      doc.setFont("Inter");
-
-      const monthStr = format(currentMonth, "MMMM yyyy", { locale: tr });
-
-      // Header
-      doc.setFontSize(20);
-      doc.setFont("Inter", "black");
-      doc.text("Aylık Çalışma Durumu ve Hakediş Dökümü", 14, 22);
-
-      doc.setFontSize(11);
-      doc.setFont("Inter", "normal");
-      doc.text(`Çalışan: ${worker.name}`, 14, 32);
-      doc.text(`Dönem: ${monthStr}`, 14, 38);
-      doc.text(`Aylık Toplam Kazanç: ${stats.totalEarnedInMonth} TL`, 14, 44);
-      doc.text(`Ödenen: ${stats.totalPaid} TL | Kalan Bakiye: ${stats.balance} TL`, 14, 50);
-
-      // Table Data
-      const tableBody = stats.dailyBreakdown.map((day) => [
-        day.dayNum + " " + day.dayName,
-        day.status === "FULL"
-          ? "Tam"
-          : day.status === "HALF"
-            ? "Yarım"
-            : day.status === "ABSENT"
-              ? "Yok"
-              : "-",
-        day.earned > 0 ? `${day.earned} TL` : "-",
-      ]);
-
-      if (tableBody.length > 0) {
-        (doc as JsPDFWithTable).autoTable({
-          startY: 55,
-          head: [["Tarih", "Durum", "Kazanç"]],
-          body: tableBody,
-          theme: "grid",
-          headStyles: { fillColor: [59, 130, 246] },
-          styles: { font: "Inter" },
-        });
-      }
-
-      const finalY = (doc as JsPDFWithTable).lastAutoTable?.finalY || 55;
-
-      const monthPrefix = format(currentMonth, "yyyy-MM");
-      const monthlyPayments = payments.filter(
-        (p: Payment) => p.date.startsWith(monthPrefix) && p.worker_id === worker.id,
-      );
-
-      if (monthlyPayments.length > 0) {
-        doc.setFont("Inter", "bold");
-        doc.text("Bu Ay Yapılan Ödemeler / Avanslar", 14, finalY + 15);
-        const paymentsBody = monthlyPayments.map((p: Payment) => [
-          format(parseISO(p.date), "dd MMM yyyy", { locale: tr }),
-          p.description || "Nakit Ödeme",
-          `${p.amount} TL`,
-        ]);
-
-        (doc as JsPDFWithTable).autoTable({
-          startY: finalY + 20,
-          head: [["Tarih", "Açıklama", "Tutar"]],
-          body: paymentsBody,
-          theme: "striped",
-          headStyles: { fillColor: [16, 185, 129] },
-          styles: { font: "Inter" },
-        });
-      }
-
-      const fileName = `${worker.name.replace(/\s+/g, "_")}_${monthStr.replace(/\s+/g, "_")}_Raporu.pdf`;
-
-      if (isTauri()) {
-        const pdfArrayBuffer = doc.output("arraybuffer");
-        await saveFileToDownloads(fileName, new Uint8Array(pdfArrayBuffer));
-      } else {
-        doc.save(fileName);
-      }
+      const fileName = await exportWorkerReport(worker, currentMonth, stats, payments);
+      addToast(`Rapor indirildi: ${fileName}`, "success");
     } catch (e: unknown) {
       console.error("[PDF] Export error:", e);
+      addToast(`Rapor oluşturulamadı: ${e instanceof Error ? e.message : String(e)}`, "error");
+    } finally {
+      setIsExporting(false);
     }
   };
 
-  const handlePrevMonth = () =>
-    setCurrentMonth((prev) => new Date(prev.getFullYear(), prev.getMonth() - 1, 1));
-  const handleNextMonth = () =>
-    setCurrentMonth((prev) => new Date(prev.getFullYear(), prev.getMonth() + 1, 1));
+  const wageOrTypeChanged =
+    parseFloat(editWage || "0") !== worker.daily_wage || editType !== worker.worker_type;
 
-  if (isLoading && !payments.length && !attendances.length) {
+  const monthLabel = format(currentMonth, "MMMM yyyy", { locale: tr });
+
+  if (isLoading && allAttendance.length === 0 && payments.length === 0) {
     return (
       <div className="flex flex-col h-full bg-background">
         <DetailSkeleton />
@@ -199,10 +165,10 @@ export function WorkerDetailView({ worker, onBack }: WorkerDetailViewProps) {
 
   return (
     <div className="flex flex-col h-full bg-background stagger-children">
-      {/* Header */}
-      <header className="px-4 pt-14 pb-4 border-b bg-card flex items-center gap-3 shrink-0">
+      <header className="px-4 pt-safe-header pb-4 border-b bg-card flex items-center gap-3 shrink-0">
         <button
           onClick={onBack}
+          aria-label="Geri"
           className="w-10 h-10 rounded-xl bg-muted/60 flex items-center justify-center active:scale-90 transition-all shrink-0"
         >
           <ArrowLeft className="w-5 h-5" />
@@ -222,22 +188,26 @@ export function WorkerDetailView({ worker, onBack }: WorkerDetailViewProps) {
             {worker.is_active === false && <span className="text-rose-500 text-xs">(Arşivde)</span>}
           </h1>
           <p
-            className={`text-[9px] font-bold uppercase tracking-wider ${
+            className={`text-[10px] font-bold uppercase tracking-wider ${
               worker.worker_type === "ORTAK" ? "text-amber-600 dark:text-amber-500" : "text-primary"
             }`}
           >
-            {worker.worker_type === "ORTAK" ? "Stratejik Ortak" : "Günlük Personel"}
+            {worker.worker_type === "ORTAK" ? "Ortak" : "Günlük Personel"}
           </p>
         </div>
         <button
-          onClick={() => setIsEditOpen(true)}
+          onClick={() => {
+            setEffectiveFrom(todayStr());
+            setIsEditOpen(true);
+          }}
+          aria-label="Çalışanı düzenle"
           className="w-10 h-10 rounded-xl bg-muted/60 flex items-center justify-center active:scale-90 transition-all shrink-0"
         >
           <Edit2 className="w-4 h-4 text-muted-foreground" />
         </button>
       </header>
 
-      {/* Edit Modal */}
+      {/* Düzenleme */}
       <Dialog open={isEditOpen} onOpenChange={setIsEditOpen}>
         <DialogContent className="rounded-2xl border-none shadow-2xl mx-4 max-w-md">
           <DialogHeader>
@@ -245,7 +215,7 @@ export function WorkerDetailView({ worker, onBack }: WorkerDetailViewProps) {
           </DialogHeader>
           <div className="space-y-4 py-3">
             <div className="space-y-1.5">
-              <Label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground ml-1">
+              <Label className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground ml-1">
                 İsim Soyisim
               </Label>
               <Input
@@ -256,7 +226,7 @@ export function WorkerDetailView({ worker, onBack }: WorkerDetailViewProps) {
               />
             </div>
             <div className="space-y-1.5">
-              <Label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground ml-1">
+              <Label className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground ml-1">
                 Günlük Yevmiye (₺)
               </Label>
               <Input
@@ -269,13 +239,14 @@ export function WorkerDetailView({ worker, onBack }: WorkerDetailViewProps) {
               />
             </div>
             <div className="space-y-1.5">
-              <Label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground ml-1">
+              <Label className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground ml-1">
                 Çalışan Tipi
               </Label>
               <div className="flex gap-2">
                 <button
                   type="button"
                   onClick={() => setEditType("GUNLUK")}
+                  aria-pressed={editType === "GUNLUK"}
                   className={`flex-1 h-11 rounded-xl font-bold text-xs transition-all ${
                     editType === "GUNLUK"
                       ? "bg-primary text-primary-foreground shadow-md"
@@ -287,6 +258,7 @@ export function WorkerDetailView({ worker, onBack }: WorkerDetailViewProps) {
                 <button
                   type="button"
                   onClick={() => setEditType("ORTAK")}
+                  aria-pressed={editType === "ORTAK"}
                   className={`flex-1 h-11 rounded-xl font-bold text-xs transition-all ${
                     editType === "ORTAK"
                       ? "bg-amber-500 text-white shadow-md shadow-amber-500/20"
@@ -297,15 +269,56 @@ export function WorkerDetailView({ worker, onBack }: WorkerDetailViewProps) {
                 </button>
               </div>
             </div>
+
+            {/* Ücret/tip değişikliği tarih etkilidir — geçmiş aylar korunur. */}
+            {wageOrTypeChanged && (
+              <div className="space-y-1.5 animate-slide-up">
+                <Label className="text-[11px] font-bold uppercase tracking-wider text-primary ml-1">
+                  Bu tarihten itibaren geçerli
+                </Label>
+                <Input
+                  type="date"
+                  className="h-12 rounded-xl border bg-muted/30 font-bold"
+                  value={effectiveFrom}
+                  onChange={(e) => setEffectiveFrom(e.target.value)}
+                />
+                <div className="flex gap-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => setEffectiveFrom(format(startOfMonth(new Date()), "yyyy-MM-dd"))}
+                    className="flex-1 h-9 rounded-lg bg-muted/60 border text-[11px] font-bold hover:bg-muted"
+                  >
+                    Bu ayın başı
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setEffectiveFrom(RATE_HISTORY_EPOCH)}
+                    className="flex-1 h-9 rounded-lg bg-muted/60 border text-[11px] font-bold hover:bg-muted"
+                  >
+                    Tüm geçmiş
+                  </button>
+                </div>
+                <p className="text-[11px] text-muted-foreground font-medium leading-relaxed">
+                  Bu tarihten önceki günler eski yevmiyeyle hesaplanmaya devam eder. Geçmiş
+                  hakedişleri de değiştirmek istiyorsanız «Tüm geçmiş» seçin.
+                </p>
+              </div>
+            )}
+
             {worker.is_active === false && (
               <div className="pt-2">
                 <Button
                   variant="outline"
                   className="w-full h-12 rounded-xl font-bold border-emerald-200 text-emerald-600 hover:bg-emerald-50"
                   onClick={async () => {
-                    await updateWorkerStatus(worker.id, true);
-                    setIsEditOpen(false);
-                    onBack();
+                    try {
+                      await updateWorkerStatus(worker.id, true);
+                      setIsEditOpen(false);
+                      addToast(`${worker.name} tekrar aktif`, "success");
+                      onBack();
+                    } catch (err: unknown) {
+                      addToast(err instanceof Error ? err.message : String(err), "error");
+                    }
                   }}
                 >
                   Sahaya Geri Çıkar
@@ -316,10 +329,25 @@ export function WorkerDetailView({ worker, onBack }: WorkerDetailViewProps) {
           <DialogFooter>
             <Button
               className="w-full h-12 rounded-xl font-black shadow-md"
+              disabled={!editName.trim()}
               onClick={async () => {
-                if (!editName || !editWage) return;
-                await updateWorker(worker.id, editName, parseFloat(editWage), editType);
-                setIsEditOpen(false);
+                if (!editName.trim()) return;
+                try {
+                  await updateWorker(
+                    worker.id,
+                    editName.trim(),
+                    parseFloat(editWage) || 0,
+                    editType,
+                    effectiveFrom,
+                  );
+                  setIsEditOpen(false);
+                  addToast("Çalışan bilgileri güncellendi", "success");
+                } catch (err: unknown) {
+                  addToast(
+                    `Güncellenemedi: ${err instanceof Error ? err.message : String(err)}`,
+                    "error",
+                  );
+                }
               }}
             >
               Değişiklikleri Kaydet
@@ -328,119 +356,174 @@ export function WorkerDetailView({ worker, onBack }: WorkerDetailViewProps) {
         </DialogContent>
       </Dialog>
 
-      {/* Scrollable Content */}
       <div className="flex-1 overflow-y-auto no-scrollbar touch-pan-y">
-        <div className="p-4 space-y-4 pb-24">
-          {/* Ay Seçici */}
+        <div className="p-4 space-y-4 pb-safe-content">
+          {/* Ay seçici */}
           <div className="flex items-center justify-between bg-card p-2 rounded-xl border">
             <button
-              onClick={handlePrevMonth}
+              onClick={() => setCurrentMonth((p) => new Date(p.getFullYear(), p.getMonth() - 1, 1))}
+              aria-label="Önceki ay"
               className="w-10 h-10 rounded-lg flex items-center justify-center active:scale-90 transition-all hover:bg-muted"
             >
               <ChevronLeft className="w-5 h-5" />
             </button>
             <div className="text-center">
-              <span className="text-[9px] font-bold uppercase tracking-wider text-muted-foreground block">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground block">
                 Dönem
               </span>
-              <h3 className="text-sm font-black capitalize">
-                {format(currentMonth, "MMMM yyyy", { locale: tr })}
-              </h3>
+              <h3 className="text-sm font-black capitalize">{monthLabel}</h3>
             </div>
             <button
-              onClick={handleNextMonth}
+              onClick={() => setCurrentMonth((p) => new Date(p.getFullYear(), p.getMonth() + 1, 1))}
+              aria-label="Sonraki ay"
               className="w-10 h-10 rounded-lg flex items-center justify-center active:scale-90 transition-all hover:bg-muted"
             >
               <ChevronRight className="w-5 h-5" />
             </button>
           </div>
 
-          {/* Finansal Özet — 3 kart yan yana */}
-          <div className="grid grid-cols-3 gap-2">
-            <div className="bg-linear-to-br from-primary/5 to-primary/10 border border-primary/10 dark:border-primary/20 p-3 rounded-xl text-center">
-              <TrendingUp className="w-4 h-4 text-primary mx-auto mb-1" />
-              <p className="text-[8px] font-bold text-primary/60 dark:text-primary/80 uppercase tracking-wider">
-                Top. Kazanç
-              </p>
-              <p className="text-base font-black font-mono tracking-tight text-primary mt-0.5">
-                ₺{stats.totalEarnedInMonth.toLocaleString("tr-TR")}
-              </p>
-            </div>
-            <div className="bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-100 dark:border-emerald-500/20 p-3 rounded-xl text-center">
-              <Wallet className="w-4 h-4 text-emerald-500 mx-auto mb-1" />
-              <p className="text-[8px] font-bold text-emerald-600/60 dark:text-emerald-400/80 uppercase tracking-wider">
-                Ödenmeyen
-              </p>
-              <p
-                className={`text-base font-black font-mono tracking-tight mt-0.5 ${stats.balance >= 0 ? "text-emerald-700 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"}`}
-              >
-                ₺{stats.balance.toLocaleString("tr-TR")}
-              </p>
-            </div>
-            <div className="bg-blue-50 dark:bg-blue-500/10 border border-blue-100 dark:border-blue-500/20 p-3 rounded-xl text-center">
-              <History className="w-4 h-4 text-blue-500 mx-auto mb-1" />
-              <p className="text-[8px] font-bold text-blue-600/60 dark:text-blue-400/80 uppercase tracking-wider">
-                Ödenen
-              </p>
-              <p className="text-base font-black font-mono tracking-tight text-blue-700 dark:text-blue-400 mt-0.5">
-                ₺{stats.totalPaid.toLocaleString("tr-TR")}
-              </p>
+          {/* Dönem özeti */}
+          <div>
+            <h3 className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-2 ml-1">
+              {monthLabel} dönemi
+            </h3>
+            <div className="grid grid-cols-3 gap-2">
+              <div className="bg-linear-to-br from-primary/5 to-primary/10 border border-primary/10 dark:border-primary/20 p-3 rounded-xl text-center">
+                <TrendingUp className="w-4 h-4 text-primary mx-auto mb-1" />
+                <p className="text-[10px] font-bold text-primary/70 dark:text-primary/80 uppercase tracking-wider">
+                  Hakediş
+                </p>
+                <p className="text-base font-black font-mono tracking-tight text-primary mt-0.5">
+                  ₺{stats.totalEarnedInMonth.toLocaleString("tr-TR")}
+                </p>
+              </div>
+              <div className="bg-blue-50 dark:bg-blue-500/10 border border-blue-100 dark:border-blue-500/20 p-3 rounded-xl text-center">
+                <History className="w-4 h-4 text-blue-500 mx-auto mb-1" />
+                <p className="text-[10px] font-bold text-blue-600/70 dark:text-blue-400/80 uppercase tracking-wider">
+                  Ödenen
+                </p>
+                <p className="text-base font-black font-mono tracking-tight text-blue-700 dark:text-blue-400 mt-0.5">
+                  ₺{stats.paidInMonth.toLocaleString("tr-TR")}
+                </p>
+              </div>
+              <div className="bg-muted/40 border p-3 rounded-xl text-center">
+                <Scale className="w-4 h-4 text-muted-foreground mx-auto mb-1" />
+                <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">
+                  Fark
+                </p>
+                <p
+                  className={`text-base font-black font-mono tracking-tight mt-0.5 ${
+                    stats.periodBalance >= 0
+                      ? "text-emerald-700 dark:text-emerald-400"
+                      : "text-rose-600 dark:text-rose-400"
+                  }`}
+                >
+                  ₺{stats.periodBalance.toLocaleString("tr-TR")}
+                </p>
+              </div>
             </div>
           </div>
 
-          {/* İndir Butonu */}
+          {/* Genel bakiye — tüm dönemler */}
+          <div className="bg-card border rounded-xl p-3.5 shadow-sm">
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">
+                Tüm dönemler
+              </h3>
+              <span className="text-[10px] font-bold text-muted-foreground/70">
+                hakediş − ödenen
+              </span>
+            </div>
+            <div className="flex items-end justify-between gap-3">
+              <div className="text-[11px] font-semibold text-muted-foreground leading-relaxed">
+                <div>
+                  Toplam hakediş:{" "}
+                  <span className="font-mono font-black text-foreground">
+                    ₺{stats.totalEarnedAllTime.toLocaleString("tr-TR")}
+                  </span>
+                </div>
+                <div>
+                  Toplam ödenen:{" "}
+                  <span className="font-mono font-black text-foreground">
+                    ₺{stats.totalPaid.toLocaleString("tr-TR")}
+                  </span>
+                </div>
+              </div>
+              <div className="text-right shrink-0">
+                <div className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                  {stats.balance >= 0 ? "Kalan borç" : "Fazla ödeme"}
+                </div>
+                <div
+                  className={`text-xl font-black font-mono tracking-tight ${
+                    stats.balance >= 0
+                      ? "text-emerald-700 dark:text-emerald-400"
+                      : "text-rose-600 dark:text-rose-400"
+                  }`}
+                >
+                  ₺{Math.abs(stats.balance).toLocaleString("tr-TR")}
+                </div>
+              </div>
+            </div>
+          </div>
+
           <button
             onClick={handleExportPDF}
-            className="w-full h-12 bg-primary/10 hover:bg-primary/20 text-primary border border-primary/20 rounded-xl flex items-center justify-center gap-2 font-black transition-all active:scale-95"
+            disabled={isExporting}
+            className="w-full h-12 bg-primary/10 hover:bg-primary/20 text-primary border border-primary/20 rounded-xl flex items-center justify-center gap-2 font-black transition-all active:scale-95 disabled:opacity-60"
           >
-            <DownloadCloud className="w-5 h-5" /> Aylık Raporu İndir (PDF)
+            <DownloadCloud className="w-5 h-5" />
+            {isExporting ? "Hazırlanıyor..." : "Aylık Raporu İndir (PDF)"}
           </button>
 
-          {/* Kazanç Grafiği */}
+          {/* Kazanç grafiği */}
           <div className="bg-card border rounded-xl p-3 h-45 flex flex-col">
             <h3 className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-2 ml-1">
               Günlük Kazanç Trendi
             </h3>
             <div className="flex-1 w-full min-h-0">
-              {stats.dailyBreakdown?.length > 0 ? (
+              {stats.dailyBreakdown.length > 0 ? (
                 <svg
                   className="w-full h-full"
                   preserveAspectRatio="xMidYMid meet"
-                  viewBox={`0 0 ${Math.max((stats.dailyBreakdown?.length ?? 0) * 24, 60)} 130`}
+                  viewBox={`0 0 ${Math.max(stats.dailyBreakdown.length * 24, 60)} 130`}
+                  role="img"
+                  aria-label={`${monthLabel} günlük kazanç grafiği`}
                 >
-                  {stats.dailyBreakdown.map((entry, i) => {
+                  {(() => {
                     const maxE = Math.max(...stats.dailyBreakdown.map((d) => d.earned), 1);
-                    const barH = (entry.earned / maxE) * 100;
-                    const x = i * 24 + 2;
-                    return (
-                      <g key={i}>
-                        <rect
-                          x={x}
-                          y={118 - barH}
-                          width={18}
-                          height={Math.max(barH, 1.5)}
-                          rx={3}
-                          fill={entry.earned > 0 ? "#10b981" : "currentColor"}
-                          fillOpacity={entry.earned > 0 ? 1 : 0.1}
-                        />
-                        <text
-                          x={x + 9}
-                          y={126}
-                          textAnchor="middle"
-                          fontSize={8}
-                          fill="currentColor"
-                          fillOpacity={0.4}
-                          fontWeight="bold"
-                        >
-                          {entry.dayNum}
-                        </text>
-                      </g>
-                    );
-                  })}
+                    return stats.dailyBreakdown.map((entry, i) => {
+                      const barH = (Math.max(entry.earned, 0) / maxE) * 100;
+                      const x = i * 24 + 2;
+                      return (
+                        <g key={entry.date}>
+                          <rect
+                            x={x}
+                            y={118 - barH}
+                            width={18}
+                            height={Math.max(barH, 1.5)}
+                            rx={3}
+                            fill={entry.earned > 0 ? "#10b981" : "currentColor"}
+                            fillOpacity={entry.earned > 0 ? 1 : 0.1}
+                          />
+                          <text
+                            x={x + 9}
+                            y={126}
+                            textAnchor="middle"
+                            fontSize={8}
+                            fill="currentColor"
+                            fillOpacity={0.5}
+                            fontWeight="bold"
+                          >
+                            {entry.dayNum}
+                          </text>
+                        </g>
+                      );
+                    });
+                  })()}
                 </svg>
               ) : (
                 <div className="h-full flex items-center justify-center">
-                  <span className="text-[10px] text-muted-foreground/40 font-bold">
+                  <span className="text-[11px] text-muted-foreground/60 font-bold">
                     Henüz veri yok
                   </span>
                 </div>
@@ -448,14 +531,12 @@ export function WorkerDetailView({ worker, onBack }: WorkerDetailViewProps) {
             </div>
           </div>
 
-          {/* Katılım Oranı & Çalışma Durumu Özeti */}
+          {/* Katılım özeti */}
           <div className="bg-card border rounded-xl p-3 flex gap-4 items-center shadow-sm">
             <div className="w-21 h-21 relative shrink-0">
-              <svg viewBox="0 0 84 84" className="w-full h-full">
+              <svg viewBox="0 0 84 84" className="w-full h-full" aria-hidden="true">
                 {(() => {
-                  const full = stats.fullDays;
-                  const half = stats.halfDays;
-                  const absent = stats.absentDays;
+                  const { fullDays: full, halfDays: half, absentDays: absent } = stats;
                   const total = full + half + absent;
                   if (total === 0) {
                     return (
@@ -472,13 +553,12 @@ export function WorkerDetailView({ worker, onBack }: WorkerDetailViewProps) {
                   }
                   const r = 34;
                   const c = 2 * Math.PI * r;
-                  const segments = [
+                  let offset = 0;
+                  return [
                     { value: full, color: "#10b981" },
                     { value: half, color: "#f59e0b" },
                     { value: absent, color: "#f43f5e" },
-                  ];
-                  let offset = 0;
-                  return segments.map((seg, i) => {
+                  ].map((seg, i) => {
                     const length = (seg.value / total) * c;
                     const el = (
                       <circle
@@ -489,7 +569,7 @@ export function WorkerDetailView({ worker, onBack }: WorkerDetailViewProps) {
                         fill="none"
                         stroke={seg.color}
                         strokeWidth="10"
-                        strokeDasharray={`${Math.max(length, 1)} ${c - length}`}
+                        strokeDasharray={`${Math.max(length, 0)} ${c - length}`}
                         strokeDashoffset={-offset}
                         transform="rotate(-90 42 42)"
                       />
@@ -510,60 +590,77 @@ export function WorkerDetailView({ worker, onBack }: WorkerDetailViewProps) {
                     : 0}
                   %
                 </span>
-                <span className="text-[7px] font-bold uppercase text-muted-foreground tracking-widest mt-0.5">
+                <span className="text-[10px] font-bold uppercase text-muted-foreground tracking-widest mt-0.5">
                   Katılım
                 </span>
               </div>
             </div>
 
-            <div className="flex-1 flex flex-col gap-1.5 justify-center">
-              <div className="flex items-center justify-between px-2.5 py-1.5 rounded-lg bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-100 dark:border-emerald-500/20">
-                <div className="flex items-center gap-1.5">
-                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
-                  <span className="text-[9px] font-bold text-emerald-700 dark:text-emerald-400 uppercase tracking-wider">
-                    Tam
-                  </span>
+            <div className="flex-1 grid grid-cols-2 gap-1.5">
+              {/*
+                Sınıf adları statik yazılır — Tailwind derleme sırasında
+                şablon değişkenli sınıf adlarını (`bg-${x}-50`) göremez.
+              */}
+              {[
+                {
+                  icon: CheckCircle2,
+                  label: "Tam",
+                  value: stats.fullDays,
+                  box: "bg-emerald-50 dark:bg-emerald-500/10 border-emerald-100 dark:border-emerald-500/20",
+                  icon_: "text-emerald-500",
+                  text: "text-emerald-700 dark:text-emerald-400",
+                },
+                {
+                  icon: MinusCircle,
+                  label: "Yarım",
+                  value: stats.halfDays,
+                  box: "bg-amber-50 dark:bg-amber-500/10 border-amber-100 dark:border-amber-500/20",
+                  icon_: "text-amber-500",
+                  text: "text-amber-700 dark:text-amber-400",
+                },
+                {
+                  icon: XCircle,
+                  label: "Yok",
+                  value: stats.absentDays,
+                  box: "bg-rose-50 dark:bg-rose-500/10 border-rose-100 dark:border-rose-500/20",
+                  icon_: "text-rose-500",
+                  text: "text-rose-700 dark:text-rose-400",
+                },
+                {
+                  icon: Palmtree,
+                  label: "İzin",
+                  value: stats.holidayDays,
+                  box: "bg-sky-50 dark:bg-sky-500/10 border-sky-100 dark:border-sky-500/20",
+                  icon_: "text-sky-500",
+                  text: "text-sky-700 dark:text-sky-400",
+                },
+              ].map(({ icon: Icon, label, value, box, icon_, text }) => (
+                <div
+                  key={label}
+                  className={`flex items-center justify-between px-2 py-1.5 rounded-lg border ${box}`}
+                >
+                  <div className="flex items-center gap-1">
+                    <Icon className={`w-3.5 h-3.5 ${icon_}`} />
+                    <span className={`text-[10px] font-bold uppercase tracking-wider ${text}`}>
+                      {label}
+                    </span>
+                  </div>
+                  <span className={`text-xs font-black ${text}`}>{value}</span>
                 </div>
-                <span className="text-xs font-black text-emerald-700 dark:text-emerald-400">
-                  {stats.fullDays}
-                </span>
-              </div>
-              <div className="flex items-center justify-between px-2.5 py-1.5 rounded-lg bg-amber-50 dark:bg-amber-500/10 border border-amber-100 dark:border-amber-500/20">
-                <div className="flex items-center gap-1.5">
-                  <MinusCircle className="w-3.5 h-3.5 text-amber-500" />
-                  <span className="text-[9px] font-bold text-amber-700 dark:text-amber-400 uppercase tracking-wider">
-                    Yarım
-                  </span>
-                </div>
-                <span className="text-xs font-black text-amber-700 dark:text-amber-400">
-                  {stats.halfDays}
-                </span>
-              </div>
-              <div className="flex items-center justify-between px-2.5 py-1.5 rounded-lg bg-rose-50 dark:bg-rose-500/10 border border-rose-100 dark:border-rose-500/20">
-                <div className="flex items-center gap-1.5">
-                  <XCircle className="w-3.5 h-3.5 text-rose-500" />
-                  <span className="text-[9px] font-bold text-rose-700 dark:text-rose-400 uppercase tracking-wider">
-                    Yok
-                  </span>
-                </div>
-                <span className="text-xs font-black text-rose-700 dark:text-rose-400">
-                  {stats.absentDays}
-                </span>
-              </div>
+              ))}
             </div>
           </div>
 
-          {/* Günlük Kazanç Dökümü */}
+          {/* Günlük döküm */}
           <div>
             <h3 className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-2 ml-1">
               Günlük Döküm
             </h3>
             <div className="rounded-xl border bg-card overflow-hidden">
-              {/* Tablo Başlık */}
-              <div className="flex bg-muted/50 px-3 py-2 text-[9px] font-bold uppercase tracking-wider text-muted-foreground border-b">
+              <div className="flex bg-muted/50 px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-muted-foreground border-b">
                 <div className="w-12">Gün</div>
                 <div className="flex-1 text-center">Durum</div>
-                <div className="w-20 text-right">Kazanç</div>
+                <div className="w-20 text-right">Hakediş</div>
               </div>
               <div className="divide-y max-h-62.5 overflow-y-auto no-scrollbar">
                 {stats.dailyBreakdown.map((day) => (
@@ -576,39 +673,45 @@ export function WorkerDetailView({ worker, onBack }: WorkerDetailViewProps) {
                           ? "bg-amber-50/40 dark:bg-amber-500/5"
                           : day.status === "ABSENT"
                             ? "bg-rose-50/30 dark:bg-rose-500/5"
-                            : ""
+                            : day.status === "HOLIDAY"
+                              ? "bg-sky-50/40 dark:bg-sky-500/5"
+                              : ""
                     }`}
                   >
                     <div className="w-12">
                       <span className="text-xs font-black">{day.dayNum}</span>
-                      <span className="text-[8px] uppercase opacity-40 ml-0.5 font-bold">
+                      <span className="text-[10px] uppercase opacity-60 ml-0.5 font-bold">
                         {day.dayName}
                       </span>
                     </div>
                     <div className="flex-1 flex justify-center">
                       {day.status === "FULL" ? (
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-400 text-[9px] font-bold">
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-400 text-[10px] font-bold">
                           <CheckCircle2 className="w-3 h-3" /> Tam
                         </span>
                       ) : day.status === "HALF" ? (
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-400 text-[9px] font-bold">
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-400 text-[10px] font-bold">
                           <MinusCircle className="w-3 h-3" /> Yarım
                         </span>
                       ) : day.status === "ABSENT" ? (
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-rose-100 dark:bg-rose-500/20 text-rose-700 dark:text-rose-400 text-[9px] font-bold">
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-rose-100 dark:bg-rose-500/20 text-rose-700 dark:text-rose-400 text-[10px] font-bold">
                           <XCircle className="w-3 h-3" /> Yok
                         </span>
+                      ) : day.status === "HOLIDAY" ? (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-sky-100 dark:bg-sky-500/20 text-sky-700 dark:text-sky-400 text-[10px] font-bold">
+                          <Palmtree className="w-3 h-3" /> İzin
+                        </span>
                       ) : (
-                        <div className="w-4 h-4 rounded-full border-2 border-dashed border-muted-foreground/15" />
+                        <div className="w-4 h-4 rounded-full border-2 border-dashed border-muted-foreground/25" />
                       )}
                     </div>
                     <div
-                      className={`w-20 text-right font-bold text-xs ${
+                      className={`w-20 text-right font-bold text-xs font-mono ${
                         day.earned > 0
                           ? "text-emerald-700 dark:text-emerald-400"
                           : day.earned < 0
                             ? "text-rose-600 dark:text-rose-400"
-                            : "text-muted-foreground/25 dark:text-muted-foreground/40"
+                            : "text-muted-foreground/50"
                       }`}
                     >
                       {day.earned !== 0 ? `₺${day.earned.toLocaleString("tr-TR")}` : "—"}
@@ -619,8 +722,14 @@ export function WorkerDetailView({ worker, onBack }: WorkerDetailViewProps) {
             </div>
           </div>
 
-          {/* Ödeme Ekle */}
-          <Dialog open={isPayOpen} onOpenChange={setIsPayOpen}>
+          {/* Ödeme ekle */}
+          <Dialog
+            open={isPayOpen}
+            onOpenChange={(open) => {
+              setIsPayOpen(open);
+              if (open) setPayDate(todayStr());
+            }}
+          >
             <DialogTrigger asChild>
               <button className="w-full h-12 rounded-xl bg-foreground text-background font-bold flex items-center justify-center gap-2 shadow-md active:scale-95 transition-all text-sm">
                 <Plus className="w-4 h-4" /> Ödeme Yap
@@ -632,7 +741,7 @@ export function WorkerDetailView({ worker, onBack }: WorkerDetailViewProps) {
               </DialogHeader>
               <div className="space-y-4 py-3">
                 <div className="space-y-1.5">
-                  <Label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground ml-1">
+                  <Label className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground ml-1">
                     Tutar (₺)
                   </Label>
                   <Input
@@ -647,7 +756,20 @@ export function WorkerDetailView({ worker, onBack }: WorkerDetailViewProps) {
                   />
                 </div>
                 <div className="space-y-1.5">
-                  <Label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground ml-1">
+                  <Label className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground ml-1">
+                    Ödeme Tarihi
+                  </Label>
+                  <Input
+                    type="date"
+                    className="h-12 rounded-xl border bg-muted/30 font-bold"
+                    value={payDate}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                      setPayDate(e.target.value)
+                    }
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground ml-1">
                     Açıklama (Opsiyonel)
                   </Label>
                   <Input
@@ -663,17 +785,22 @@ export function WorkerDetailView({ worker, onBack }: WorkerDetailViewProps) {
               <DialogFooter>
                 <Button
                   className="w-full h-12 rounded-xl font-black shadow-md"
+                  disabled={!payAmount || !(parseFloat(payAmount) > 0) || !payDate}
                   onClick={async () => {
-                    if (!payAmount) return;
-                    await addPayment(
-                      worker.id,
-                      parseFloat(payAmount),
-                      new Date().toISOString().split("T")[0],
-                      payDesc,
-                    );
-                    setIsPayOpen(false);
-                    setPayAmount("");
-                    setPayDesc("");
+                    const amount = parseFloat(payAmount);
+                    if (!(amount > 0) || !payDate) return;
+                    try {
+                      await addPayment(worker.id, amount, payDate, payDesc);
+                      setIsPayOpen(false);
+                      setPayAmount("");
+                      setPayDesc("");
+                      addToast("Ödeme kaydedildi", "success");
+                    } catch (err: unknown) {
+                      addToast(
+                        `Ödeme kaydedilemedi: ${err instanceof Error ? err.message : String(err)}`,
+                        "error",
+                      );
+                    }
                   }}
                 >
                   Kaydet
@@ -682,18 +809,18 @@ export function WorkerDetailView({ worker, onBack }: WorkerDetailViewProps) {
             </DialogContent>
           </Dialog>
 
-          {/* Son Ödemeler */}
+          {/* Ödemeler */}
           <div>
             <h3 className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-2 ml-1">
-              Son Ödemeler
+              {monthLabel} ödemeleri
             </h3>
             <div className="space-y-2">
-              {payments.slice(0, 5).map((p: Payment) => (
+              {monthPayments.map((p: Payment) => (
                 <div
                   key={p.id}
-                  className="flex justify-between items-center p-3 rounded-xl bg-card border shadow-sm"
+                  className="flex justify-between items-center p-3 rounded-xl bg-card border shadow-sm gap-2"
                 >
-                  <div className="flex gap-2.5 items-center">
+                  <div className="flex gap-2.5 items-center min-w-0">
                     <div className="w-8 h-8 rounded-lg bg-blue-50 dark:bg-blue-500/10 flex items-center justify-center shrink-0">
                       <Wallet className="w-4 h-4 text-blue-500 dark:text-blue-400" />
                     </div>
@@ -701,31 +828,91 @@ export function WorkerDetailView({ worker, onBack }: WorkerDetailViewProps) {
                       <p className="font-bold text-xs truncate">
                         {format(parseISO(p.date), "dd MMM yyyy", { locale: tr })}
                       </p>
-                      <p className="text-[10px] text-muted-foreground truncate">
+                      <p className="text-[11px] text-muted-foreground truncate">
                         {p.description || "Nakit Ödeme"}
                       </p>
                     </div>
                   </div>
-                  <div className="text-blue-600 dark:text-blue-400 font-black text-sm shrink-0 ml-2">
-                    ₺{p.amount.toLocaleString("tr-TR")}
+                  <div className="flex items-center gap-1 shrink-0">
+                    <span className="text-blue-600 dark:text-blue-400 font-black text-sm font-mono">
+                      ₺{p.amount.toLocaleString("tr-TR")}
+                    </span>
+                    <button
+                      onClick={() => setPaymentToDelete(p)}
+                      aria-label="Ödemeyi sil"
+                      className="w-8 h-8 rounded-lg flex items-center justify-center text-muted-foreground hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-500/10 active:scale-90 transition-all"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
                   </div>
                 </div>
               ))}
-              {payments.length === 0 && (
+              {monthPayments.length === 0 && (
                 <div className="flex flex-col items-center justify-center py-8 text-center animate-scale-in">
                   <Wallet className="w-10 h-10 text-muted-foreground/30 mb-3" />
                   <p className="text-xs text-center text-muted-foreground font-medium">
-                    Bu ay henüz ödeme yapılmamış
+                    {monthLabel} döneminde ödeme yok
                   </p>
-                  <p className="text-[10px] text-muted-foreground/50 mt-1">
-                    Aşağıdaki butondan avans/ödeme ekleyebilirsiniz
+                  <p className="text-[11px] text-muted-foreground/70 mt-1">
+                    Yukarıdaki butondan avans/ödeme ekleyebilirsiniz
                   </p>
                 </div>
+              )}
+              {payments.length > monthPayments.length && (
+                <p className="text-[11px] text-muted-foreground/70 text-center pt-1">
+                  Diğer dönemlerde {payments.length - monthPayments.length} ödeme daha var.
+                </p>
               )}
             </div>
           </div>
 
-          {/* Arşivle Bölümü */}
+          {/* Ödeme silme onayı */}
+          <Dialog open={!!paymentToDelete} onOpenChange={(o) => !o && setPaymentToDelete(null)}>
+            <DialogContent className="w-[90%] max-w-sm rounded-3xl p-6 border-none shadow-2xl">
+              <DialogHeader className="mb-2">
+                <DialogTitle className="text-lg font-black text-rose-600">Ödemeyi Sil</DialogTitle>
+              </DialogHeader>
+              {paymentToDelete && (
+                <p className="text-sm text-muted-foreground font-medium py-2">
+                  <span className="font-black text-foreground">
+                    ₺{paymentToDelete.amount.toLocaleString("tr-TR")}
+                  </span>{" "}
+                  tutarındaki{" "}
+                  {format(parseISO(paymentToDelete.date), "dd MMMM yyyy", { locale: tr })} tarihli
+                  ödeme silinecek. Bu işlem Sistem Geçmişi'nden geri alınabilir.
+                </p>
+              )}
+              <div className="flex gap-3 mt-4">
+                <button
+                  className="flex-1 h-12 rounded-xl border font-bold text-xs hover:bg-muted"
+                  onClick={() => setPaymentToDelete(null)}
+                >
+                  Vazgeç
+                </button>
+                <button
+                  className="flex-1 h-12 rounded-xl bg-rose-500 text-white font-bold text-xs shadow-md shadow-rose-500/20"
+                  onClick={async () => {
+                    if (!paymentToDelete) return;
+                    try {
+                      await deletePayment(paymentToDelete.id, worker.id);
+                      addToast("Ödeme silindi", "success");
+                    } catch (err: unknown) {
+                      addToast(
+                        `Silinemedi: ${err instanceof Error ? err.message : String(err)}`,
+                        "error",
+                      );
+                    } finally {
+                      setPaymentToDelete(null);
+                    }
+                  }}
+                >
+                  Evet, Sil
+                </button>
+              </div>
+            </DialogContent>
+          </Dialog>
+
+          {/* Arşivle */}
           {worker.is_active !== false && (
             <div className="px-5 mt-6 mb-8 flex justify-center">
               <Dialog open={isDeleteOpen} onOpenChange={setIsDeleteOpen}>
@@ -756,9 +943,14 @@ export function WorkerDetailView({ worker, onBack }: WorkerDetailViewProps) {
                     <Button
                       className="flex-1 h-12 rounded-xl bg-rose-500 hover:bg-rose-600 text-white font-bold text-xs shadow-md shadow-rose-500/20"
                       onClick={async () => {
-                        await archiveWorker(worker.id);
-                        setIsDeleteOpen(false);
-                        onBack();
+                        try {
+                          await archiveWorker(worker.id);
+                          setIsDeleteOpen(false);
+                          addToast(`${worker.name} arşivlendi`, "success");
+                          onBack();
+                        } catch (err: unknown) {
+                          addToast(err instanceof Error ? err.message : String(err), "error");
+                        }
                       }}
                     >
                       Evet, Arşivle

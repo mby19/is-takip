@@ -1,21 +1,31 @@
-import { useState, useEffect, useCallback, useRef, Suspense } from "react";
+import { useState, useEffect, useCallback, useRef, Suspense, lazy } from "react";
 import { CalendarScreen } from "./components/CalendarScreen";
 import { WorkersScreen } from "./components/WorkersScreen";
 import { DayDetailSheet } from "./components/DayDetailSheet";
-import { WorkerDetailView } from "./components/WorkerDetailView";
-import { AuditLogView } from "./components/AuditLogView";
-import { SettingsView } from "./components/SettingsView";
 import { AppLockOverlay } from "./components/AppLockOverlay";
 import { ToastContainer } from "./components/ToastContainer";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { OfflineIndicator } from "./components/OfflineIndicator";
 import { getDb } from "./lib/db";
+import { isLockEnabled } from "./lib/appLock";
+import { reportError } from "./lib/errorMonitoring";
 import { Button } from "./components/ui/button";
 import { useWorkerStore } from "./stores/workerStore";
 import { useThemeStore } from "./stores/themeStore";
 import { useToastStore } from "./stores/toastStore";
 import { Users, CalendarDays, Settings, ClipboardList } from "lucide-react";
 import type { Worker } from "./types";
+
+// Ağır ekranlar yalnızca açıldıklarında yüklenir — açılış süresi ve paket boyutu düşer.
+const WorkerDetailView = lazy(() =>
+  import("./components/WorkerDetailView").then((m) => ({ default: m.WorkerDetailView })),
+);
+const AuditLogView = lazy(() =>
+  import("./components/AuditLogView").then((m) => ({ default: m.AuditLogView })),
+);
+const SettingsView = lazy(() =>
+  import("./components/SettingsView").then((m) => ({ default: m.SettingsView })),
+);
 
 const LoadingSpinner = () => (
   <div className="flex-1 flex items-center justify-center">
@@ -35,33 +45,39 @@ function App() {
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [dbReady, setDbReady] = useState(false);
   const [dbError, setDbError] = useState<string | null>(null);
-  const [isUnlocked, setIsUnlocked] = useState(() => {
-    return localStorage.getItem("appLockEnabled") !== "true";
-  });
+  const [isUnlocked, setIsUnlocked] = useState(() => !isLockEnabled());
 
   const currentScreen = navStack[navStack.length - 1];
   const isRootScreen = navStack.length === 1;
 
-  /** Her geri basış: stack'ten pop + timer başlat. Timer aktifken basarsa çık. */
+  /** Kök ekranda arka arkaya iki geri basış çıkış anlamına gelir. */
   const exitTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   const goBack = useCallback(() => {
     setNavStack((prev) => {
-      // Exit timer aktifken geri basılırsa → çıkış
+      // Alt ekrandayken geri: sadece bir üste dön, çıkış uyarısı gösterme.
+      if (prev.length > 1) return prev.slice(0, -1);
+
+      // Kök ekrandayız. İkinci basışta çık.
       if (exitTimerRef.current) {
         clearTimeout(exitTimerRef.current);
         exitTimerRef.current = undefined;
-        window.close();
+        void (async () => {
+          try {
+            const { getCurrentWindow } = await import("@tauri-apps/api/window");
+            await getCurrentWindow().close();
+          } catch {
+            window.close();
+          }
+        })();
         return prev;
       }
 
-      // Normal geri: stack'ten pop + exit timer'ı başlat
-      const next = prev.length <= 1 ? prev : prev.slice(0, -1);
       useToastStore.getState().addToast("Çıkmak için tekrar geri tuşuna basın", "info");
       exitTimerRef.current = setTimeout(() => {
         exitTimerRef.current = undefined;
       }, 3000);
-      return next;
+      return prev;
     });
   }, []);
 
@@ -73,17 +89,16 @@ function App() {
     setNavStack((prev) => [...prev, screen]);
   }, []);
 
-  // Global back handler: Escape + popstate (macOS swipe gesture)
+  // Global geri hareketi: Escape + popstate (dokunmatik/kaydırma jesti)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
-        if (selectedDate) return; // dialog handles its own Escape
+        if (selectedDate) return; // dialog kendi Escape'ini yönetiyor
         e.preventDefault();
         goBack();
       }
     };
     const handlePopState = () => {
-      // Prevent back gesture from exiting the app
       window.history.pushState(null, "", window.location.href);
       if (selectedDate) {
         setSelectedDate(null);
@@ -91,7 +106,6 @@ function App() {
       }
       goBack();
     };
-    // Seed so popstate can fire
     window.history.pushState(null, "", window.location.href);
 
     window.addEventListener("keydown", handleKeyDown);
@@ -112,22 +126,19 @@ function App() {
   }, [themeMode, themePalette]);
 
   const fetchWorkers = useWorkerStore((s) => s.fetchWorkers);
+  const fetchRateHistory = useWorkerStore((s) => s.fetchRateHistory);
 
-  // App Lock: lock on visibility change
+  /**
+   * Uygulama arka plana alındığında kilitler.
+   * Dinleyici koşulsuz kurulur; kilidin açık olup olmadığı olay anında
+   * kontrol edilir — böylece kilidi yeni açan kullanıcı için de çalışır.
+   */
   useEffect(() => {
-    const isLockEnabled = localStorage.getItem("appLockEnabled") === "true";
-    if (!isLockEnabled) return;
-
     const handleVisibilityChange = () => {
-      if (document.hidden) {
-        setIsUnlocked(false);
-      }
+      if (document.hidden && isLockEnabled()) setIsUnlocked(false);
     };
-
     document.addEventListener("visibilitychange", handleVisibilityChange);
-    return () => {
-      document.removeEventListener("visibilitychange", handleVisibilityChange);
-    };
+    return () => document.removeEventListener("visibilitychange", handleVisibilityChange);
   }, []);
 
   useEffect(() => {
@@ -136,15 +147,15 @@ function App() {
     const init = async () => {
       try {
         await getDb();
-
-        if (isMounted) {
-          await fetchWorkers();
-          setDbReady(true);
-        }
+        if (!isMounted) return;
+        await fetchWorkers();
+        await fetchRateHistory();
+        setDbReady(true);
       } catch (err: unknown) {
-        if (isMounted) {
-          setDbError(typeof err === "object" ? JSON.stringify(err) : String(err));
-        }
+        if (!isMounted) return;
+        const message = err instanceof Error ? err.message : String(err);
+        reportError(err instanceof Error ? err : new Error(message), { scope: "db-init" });
+        setDbError(message);
       }
     };
 
@@ -152,7 +163,7 @@ function App() {
     return () => {
       isMounted = false;
     };
-  }, [fetchWorkers]);
+  }, [fetchWorkers, fetchRateHistory]);
 
   if (dbError) {
     return (
@@ -161,9 +172,9 @@ function App() {
           <span className="text-4xl">⚠️</span>
         </div>
         <div className="text-rose-600 dark:text-rose-400 font-black text-xl mb-2">
-          Bağlantı Hatası
+          Veritabanına Bağlanılamadı
         </div>
-        <div className="text-muted-foreground font-medium mb-8 max-w-xs text-sm leading-relaxed">
+        <div className="text-muted-foreground font-medium mb-8 max-w-xs text-sm leading-relaxed break-words">
           {dbError}
         </div>
         <Button
@@ -201,8 +212,11 @@ function App() {
       <OfflineIndicator />
       <main className="h-screen w-screen bg-background text-foreground flex flex-col items-center overflow-hidden selection:bg-primary/20">
         {!isUnlocked && <AppLockOverlay onUnlock={() => setIsUnlocked(true)} />}
-        <div className="w-full max-w-md bg-background h-screen relative flex flex-col overflow-hidden">
-          {/* Navigasyon İçeriği */}
+        <div
+          className="w-full max-w-md bg-background h-screen relative flex flex-col overflow-hidden"
+          aria-hidden={!isUnlocked}
+          inert={!isUnlocked ? true : undefined}
+        >
           <ErrorBoundary>
             <Suspense fallback={<LoadingSpinner />}>
               <div className="flex-1 flex flex-col overflow-hidden">
@@ -246,7 +260,7 @@ function App() {
                           onWorkerClick={(w) => navigateTo({ kind: "worker-detail", worker: w })}
                         />
                       );
-                    default: // calendar
+                    default:
                       return (
                         <CalendarScreen
                           key="calendar"
@@ -260,10 +274,9 @@ function App() {
             </Suspense>
           </ErrorBoundary>
 
-          {/* Alt Navigasyon Barı */}
           {isRootScreen && (
             <nav
-              className="fixed bottom-0 w-full max-w-md bg-card/90 backdrop-blur-md border-t px-4 pb-6 pt-2 flex justify-around items-center z-50"
+              className="fixed bottom-0 w-full max-w-md bg-card/90 backdrop-blur-md border-t px-4 pb-safe-nav pt-2 flex justify-around items-center z-50"
               role="navigation"
               aria-label="Ana menü"
             >
@@ -284,7 +297,7 @@ function App() {
                   >
                     <Icon className={`w-5 h-5 ${isActive ? "" : "opacity-60"}`} />
                     <span
-                      className={`text-[9px] font-bold uppercase ${isActive ? "opacity-100" : "opacity-50"}`}
+                      className={`text-[10px] font-bold uppercase ${isActive ? "opacity-100" : "opacity-60"}`}
                     >
                       {item.label}
                     </span>
@@ -301,7 +314,6 @@ function App() {
             onClose={() => setSelectedDate(null)}
           />
 
-          {/* Toast — nav bar'ın hemen üstünde, backdrop-blur'un önünde */}
           <ToastContainer />
         </div>
       </main>

@@ -70,3 +70,12 @@ export const readTextFileFromDownloads = async (fileName: string): Promise<strin
   const { readTextFile, BaseDirectory } = await import("@tauri-apps/plugin-fs");
   return await readTextFile(fileName, { baseDir: BaseDirectory.Download });
 };
+
+/**
+ * İndirilenler klasöründen bir dosyayı siler.
+ * `fs:allow-remove` izni gerektirir (bkz. capabilities/default.json).
+ */
+export const removeFileFromDownloads = async (fileName: string): Promise<void> => {
+  const { remove, BaseDirectory } = await import("@tauri-apps/plugin-fs");
+  await remove(fileName, { baseDir: BaseDirectory.Download });
+};

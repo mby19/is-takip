@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useAuditLogStore } from "../stores/auditLogStore";
-import { parseLogData } from "../utils/parseLogData";
+import { parseLogData, parseAttendanceSnapshot } from "../utils/parseLogData";
 import { useWorkerStore } from "../stores/workerStore";
 import { useToastStore } from "../stores/toastStore";
 import {
@@ -108,16 +108,10 @@ export function AuditLogView({ onBack }: { onBack: () => void }) {
   };
 
   const parseAtts = (s: string | null | undefined) => {
-    if (!s) return {};
     const res: Record<string, { name: string; status: string }> = {};
-    s.split(",").forEach((part) => {
-      const sub = part.trim().split(":");
-      if (sub.length >= 3) {
-        res[sub[0]] = { name: sub[1], status: sub[2] };
-      } else if (sub.length === 2) {
-        res[sub[0]] = { name: sub[0], status: sub[1] };
-      }
-    });
+    for (const entry of parseAttendanceSnapshot(s)) {
+      res[String(entry.id)] = { name: entry.name, status: entry.status };
+    }
     return res;
   };
 
@@ -232,7 +226,7 @@ export function AuditLogView({ onBack }: { onBack: () => void }) {
                 <b>{fmtDate(date)}</b> günlük veri{" "}
                 {log.action_type === "INSERT" ? "eklendi" : "güncellendi"}
                 {changedCount > 0 && (
-                  <span className="bg-primary/10 text-primary text-[8px] px-1.5 py-0.5 rounded-full font-black border border-primary/20">
+                  <span className="bg-primary/10 text-primary text-[10px] px-1.5 py-0.5 rounded-full font-black border border-primary/20">
                     {changedCount} kişi güncellendi
                   </span>
                 )}
@@ -348,7 +342,7 @@ export function AuditLogView({ onBack }: { onBack: () => void }) {
         {/* Personel Durumu / Değişiklikleri */}
         {allWorkerIds.length > 0 && (
           <div className="border-t pt-2">
-            <p className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest mb-1.5 px-1">
+            <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mb-1.5 px-1">
               Personel Durumu
             </p>
             <div className="grid grid-cols-2 gap-1.5">
@@ -376,7 +370,7 @@ export function AuditLogView({ onBack }: { onBack: () => void }) {
                       {isChanged ? (
                         <>
                           <span className={`${statusColor(os)} opacity-40`}>{sLbl(os)}</span>
-                          <span className="text-muted-foreground/30 text-[8px]">→</span>
+                          <span className="text-muted-foreground/30 text-[10px]">→</span>
                           <span className={statusColor(ns)}>{sLbl(ns)}</span>
                         </>
                       ) : ns === "FULL" || ns === "HALF" ? (
@@ -397,11 +391,7 @@ export function AuditLogView({ onBack }: { onBack: () => void }) {
     setRevertingId(log.id);
     try {
       await revertLog(log);
-      addToast("Geri alındı!", "success");
-      // Geri alma sonrası tüm store'ların ve sayfaların sıfırlanıp güncel veriyi veritabanından çekmesini garanti et
-      setTimeout(() => {
-        window.location.reload();
-      }, 500);
+      addToast("İşlem geri alındı", "success");
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       addToast("Geri alma hatası: " + msg, "error");
@@ -478,13 +468,16 @@ export function AuditLogView({ onBack }: { onBack: () => void }) {
   const actionIcon = (t: string) => {
     if (t === "INSERT") return <PlusCircle className="w-3.5 h-3.5 text-emerald-500 shrink-0" />;
     if (t === "UPDATE") return <Edit3 className="w-3.5 h-3.5 text-amber-500 shrink-0" />;
+    if (t === "REVERT") return <RotateCcw className="w-3.5 h-3.5 text-sky-500 shrink-0" />;
+    if (t === "EXPORT" || t === "IMPORT")
+      return <History className="w-3.5 h-3.5 text-primary shrink-0" />;
     return <Trash2 className="w-3.5 h-3.5 text-rose-500 shrink-0" />;
   };
 
   return (
     <div className="flex flex-col h-full bg-background">
       {/* Header */}
-      <header className="px-4 pt-14 pb-3 border-b bg-card flex flex-col gap-3 shrink-0">
+      <header className="px-4 pt-safe-header pb-3 border-b bg-card flex flex-col gap-3 shrink-0">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
             <button
@@ -495,7 +488,7 @@ export function AuditLogView({ onBack }: { onBack: () => void }) {
             </button>
             <div>
               <h1 className="text-lg font-black tracking-tight">İşlem Geçmişi</h1>
-              <p className="text-[9px] font-bold text-muted-foreground tracking-wider">
+              <p className="text-[10px] font-bold text-muted-foreground tracking-wider">
                 {logs.length} kayıt
               </p>
             </div>
@@ -525,7 +518,7 @@ export function AuditLogView({ onBack }: { onBack: () => void }) {
 
       {/* Log listesi */}
       <div className="flex-1 overflow-y-auto no-scrollbar">
-        <div className="p-3 space-y-2 pb-24">
+        <div className="p-3 space-y-2 pb-safe-content">
           {isLoading && (
             <p className="text-center py-10 animate-pulse text-sm text-muted-foreground">
               Yükleniyor...
@@ -533,24 +526,33 @@ export function AuditLogView({ onBack }: { onBack: () => void }) {
           )}
 
           {filteredLogs.map((log) => (
-            <div key={log.id} className="p-3 rounded-xl bg-card border shadow-sm">
+            <div
+              key={log.id}
+              className={`p-3 rounded-xl bg-card border shadow-sm ${log.reverted_at ? "opacity-60 border-dashed" : ""}`}
+            >
               {/* Üst satır: ikon + zaman + geri al */}
               <div className="flex items-center justify-between mb-1.5">
                 <div className="flex items-center gap-1.5">
                   {actionIcon(log.action_type)}
-                  <span className="text-[9px] text-muted-foreground font-medium flex items-center gap-1">
+                  <span className="text-[10px] text-muted-foreground font-medium flex items-center gap-1">
                     <Clock className="w-2.5 h-2.5" />
                     {fmtTime(log.created_at)}
                   </span>
                 </div>
-                {["attendance", "daily_metrics", "payments", "workers"].includes(
-                  log.entity_table,
-                ) &&
+                {log.reverted_at ? (
+                  <span className="text-[10px] font-bold text-sky-600 dark:text-sky-400 bg-sky-50 dark:bg-sky-500/10 px-2 py-0.5 rounded flex items-center gap-1">
+                    <RotateCcw className="w-2.5 h-2.5" />
+                    Geri alındı
+                  </span>
+                ) : (
+                  ["attendance", "daily_metrics", "payments", "workers"].includes(
+                    log.entity_table,
+                  ) &&
                   ["UPDATE", "INSERT", "DELETE"].includes(log.action_type) && (
                     <button
                       onClick={() => setConfirmLog(log)}
                       disabled={revertingId === log.id}
-                      className="text-[9px] font-bold text-rose-500 bg-rose-50 dark:bg-rose-500/10 px-2 py-0.5 rounded active:scale-95 flex items-center gap-0.5 disabled:opacity-50"
+                      className="text-[10px] font-bold text-rose-500 bg-rose-50 dark:bg-rose-500/10 px-2 py-0.5 rounded active:scale-95 flex items-center gap-0.5 disabled:opacity-50"
                     >
                       {revertingId === log.id ? (
                         <Loader2 className="w-2.5 h-2.5 animate-spin" />
@@ -559,10 +561,11 @@ export function AuditLogView({ onBack }: { onBack: () => void }) {
                       )}
                       Geri Al
                     </button>
-                  )}
+                  )
+                )}
               </div>
               {/* Mesaj */}
-              <div className="text-[12px] leading-relaxed">{renderLog(log)}</div>
+              <div className="text-[13px] leading-relaxed">{renderLog(log)}</div>
             </div>
           ))}
 
@@ -573,7 +576,7 @@ export function AuditLogView({ onBack }: { onBack: () => void }) {
               </div>
               <div className="space-y-1">
                 <p className="text-sm font-bold text-muted-foreground">Henüz kayıt yok</p>
-                <p className="text-[10px] text-muted-foreground/60 max-w-60 leading-relaxed">
+                <p className="text-[11px] text-muted-foreground/70 max-w-60 leading-relaxed">
                   Veri girişi yaptığınızda tüm değişiklikler burada görünecek.
                 </p>
               </div>
@@ -609,7 +612,7 @@ export function AuditLogView({ onBack }: { onBack: () => void }) {
                     <h4 className="text-xs font-black text-rose-600 dark:text-rose-400 uppercase tracking-wider">
                       Yapılacak Değişiklik
                     </h4>
-                    <p className="text-[12px] leading-relaxed text-muted-foreground mt-1 font-medium">
+                    <p className="text-[13px] leading-relaxed text-muted-foreground mt-1 font-medium">
                       {getRevertDescription(confirmLog)}
                     </p>
                   </div>

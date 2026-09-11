@@ -166,7 +166,7 @@ export function SpinWheelDialog() {
 
           {/* KATILIMCILAR */}
           <div className="w-full mt-4 bg-muted/30 p-3 rounded-2xl border border-border/50">
-            <div className="text-[9px] font-black uppercase tracking-widest text-muted-foreground ml-1 mb-2">
+            <div className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-1 mb-2">
               Katılımcılar ({activeWorkers.length})
             </div>
             <div className="flex gap-2 overflow-x-auto no-scrollbar pb-1">

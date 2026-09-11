@@ -1,6 +1,14 @@
 import { startOfMonth, endOfMonth, eachDayOfInterval, format } from "date-fns";
 import { tr } from "date-fns/locale";
-import type { Worker, Payment, DailyMetric, Attendance } from "../types";
+import type {
+  Worker,
+  Payment,
+  DailyMetric,
+  Attendance,
+  WorkerRate,
+  AttendanceStatus,
+} from "../types";
+import { calculateDailyEarnings, rateResolverFor } from "./earningsCalculator";
 
 export interface DailyBreakdown {
   date: string;
@@ -11,99 +19,136 @@ export interface DailyBreakdown {
 }
 
 export interface WorkerStats {
+  /** Seçili aydaki hakediş. */
   totalEarnedInMonth: number;
+  /** Seçili ayda yapılan ödemeler. */
+  paidInMonth: number;
+  /** Dönem bakiyesi: ayın hakedişi − ayın ödemeleri. */
+  periodBalance: number;
+
+  /** Verilen tüm veri üzerinden toplam hakediş. */
+  totalEarnedAllTime: number;
+  /** Tüm zamanların ödemeleri. */
   totalPaid: number;
+  /** Kalan borç: tüm hakediş − tüm ödemeler. */
   balance: number;
+
   dailyBreakdown: DailyBreakdown[];
   fullDays: number;
   halfDays: number;
   absentDays: number;
+  holidayDays: number;
+}
+
+/** Gün bazında hızlı erişim için tarih → o güne ait kayıtlar dizini. */
+function indexByDate<T extends { date: string }>(rows: readonly T[]): Map<string, T[]> {
+  const map = new Map<string, T[]>();
+  for (const row of rows) {
+    const key = String(row.date).trim();
+    const bucket = map.get(key);
+    if (bucket) bucket.push(row);
+    else map.set(key, [row]);
+  }
+  return map;
 }
 
 export function calculateWorkerStats(
   worker: Worker,
   currentMonth: Date,
-  metrics: DailyMetric[],
-  attendances: Attendance[],
-  workers: Worker[],
-  payments: Payment[],
+  metrics: readonly DailyMetric[],
+  attendances: readonly Attendance[],
+  workers: readonly Worker[],
+  payments: readonly Payment[],
+  rateHistory: readonly WorkerRate[] = [],
 ): WorkerStats {
-  const monthStart = startOfMonth(currentMonth);
-  const monthEnd = endOfMonth(currentMonth);
-  const days = eachDayOfInterval({ start: monthStart, end: monthEnd });
+  const attendanceByDate = indexByDate(attendances);
+  const metricByDate = new Map<string, DailyMetric>();
+  for (const m of metrics) metricByDate.set(String(m.date).trim(), m);
+
+  // Ortak payı havuzu tüm ekibi gerektirir; hesaplanan çalışanın listede
+  // bulunduğundan emin ol (çağıran yalnızca kişiyi verdiyse de doğru çalışsın).
+  const poolWorkers: Worker[] = workers.some((w) => Number(w.id) === Number(worker.id))
+    ? [...workers]
+    : [...workers, worker];
+
+  /** Tek bir günün, bu çalışan için hakedişini hesaplar. */
+  const earnedOn = (dateStr: string): { status: AttendanceStatus | null; earned: number } => {
+    const dayAttendances = attendanceByDate.get(dateStr) ?? [];
+    const mine = dayAttendances.find((a) => Number(a.worker_id) === Number(worker.id));
+    const status = mine?.status ?? null;
+
+    if (!status || (status !== "FULL" && status !== "HALF")) {
+      return { status, earned: 0 };
+    }
+
+    const metric = metricByDate.get(dateStr);
+    const statusMap: Record<number, AttendanceStatus | null> = {};
+    for (const a of dayAttendances) statusMap[Number(a.worker_id)] = a.status;
+
+    const result = calculateDailyEarnings(
+      poolWorkers,
+      statusMap,
+      metric?.total_earned ?? 0,
+      metric?.extra_expenses ?? 0,
+      rateResolverFor(dateStr, rateHistory),
+    );
+
+    // Yevmiyeli personel gün verisi girilmemiş olsa da ücretini hak eder;
+    // ortak payı ise ancak o günün cirosu girilmişse oluşur.
+    const earned = result.individualEarnings[worker.id] ?? 0;
+    return { status, earned };
+  };
+
+  const days = eachDayOfInterval({
+    start: startOfMonth(currentMonth),
+    end: endOfMonth(currentMonth),
+  });
 
   let totalEarnedInMonth = 0;
   const dailyBreakdown: DailyBreakdown[] = [];
 
-  days.forEach((day) => {
+  for (const day of days) {
     const dateStr = format(day, "yyyy-MM-dd");
-    const metric = metrics.find((m) => m.date === dateStr);
-    const dayAttendances = attendances.filter((a) => a.date === dateStr);
-
-    const myAttendance = dayAttendances.find((a) => a.worker_id === worker.id);
-    const status = myAttendance?.status || null;
-    let dayEarned = 0;
-
-    if (myAttendance && (myAttendance.status === "FULL" || myAttendance.status === "HALF")) {
-      const weight = myAttendance.status === "FULL" ? 1 : 0.5;
-
-      if (worker.worker_type === "GUNLUK") {
-        dayEarned = worker.daily_wage * weight;
-      } else {
-        if (metric) {
-          const netRevenue = metric.total_earned - metric.extra_expenses;
-
-          let dailyWagesTotal = 0;
-          dayAttendances.forEach((a) => {
-            const w = workers.find((work) => work.id === a.worker_id);
-            if (w && w.worker_type === "GUNLUK") {
-              const wWeight = a.status === "FULL" ? 1 : a.status === "HALF" ? 0.5 : 0;
-              dailyWagesTotal += w.daily_wage * wWeight;
-            }
-          });
-
-          const pool = netRevenue - dailyWagesTotal;
-
-          const partnersPresent = dayAttendances.filter((a) => {
-            const w = workers.find((work) => work.id === a.worker_id);
-            return w && w.worker_type === "ORTAK" && (a.status === "FULL" || a.status === "HALF");
-          });
-
-          let totalPartnerWeight = 0;
-          partnersPresent.forEach((p) => {
-            totalPartnerWeight += p.status === "FULL" ? 1 : 0.5;
-          });
-
-          if (totalPartnerWeight > 0) {
-            dayEarned = (pool / totalPartnerWeight) * weight;
-          }
-        }
-      }
-
-      totalEarnedInMonth += dayEarned;
-    }
+    const { status, earned } = earnedOn(dateStr);
+    totalEarnedInMonth += earned;
 
     dailyBreakdown.push({
       date: dateStr,
       dayName: format(day, "EEE", { locale: tr }),
       dayNum: format(day, "dd"),
       status,
-      earned: Math.round(dayEarned),
+      earned: Math.round(earned),
     });
-  });
+  }
 
-  const totalPaid = payments.reduce((sum, p) => sum + p.amount, 0);
-  const fullDays = dailyBreakdown.filter((d) => d.status === "FULL").length;
-  const halfDays = dailyBreakdown.filter((d) => d.status === "HALF").length;
-  const absentDays = dailyBreakdown.filter((d) => d.status === "ABSENT").length;
+  // Tüm zamanların hakedişi: bu çalışanın puantaj kaydı olan her gün.
+  let totalEarnedAllTime = 0;
+  for (const [dateStr, rows] of attendanceByDate) {
+    if (!rows.some((a) => Number(a.worker_id) === Number(worker.id))) continue;
+    totalEarnedAllTime += earnedOn(dateStr).earned;
+  }
+
+  const monthPrefix = format(currentMonth, "yyyy-MM");
+  const scopedPayments = payments.filter((p) => Number(p.worker_id) === Number(worker.id));
+
+  const totalPaid = scopedPayments.reduce((sum, p) => sum + Number(p.amount || 0), 0);
+  const paidInMonth = scopedPayments
+    .filter((p) => String(p.date).startsWith(monthPrefix))
+    .reduce((sum, p) => sum + Number(p.amount || 0), 0);
 
   return {
     totalEarnedInMonth: Math.round(totalEarnedInMonth),
-    totalPaid,
-    balance: Math.round(totalEarnedInMonth - totalPaid),
+    paidInMonth: Math.round(paidInMonth),
+    periodBalance: Math.round(totalEarnedInMonth - paidInMonth),
+
+    totalEarnedAllTime: Math.round(totalEarnedAllTime),
+    totalPaid: Math.round(totalPaid),
+    balance: Math.round(totalEarnedAllTime - totalPaid),
+
     dailyBreakdown,
-    fullDays,
-    halfDays,
-    absentDays,
+    fullDays: dailyBreakdown.filter((d) => d.status === "FULL").length,
+    halfDays: dailyBreakdown.filter((d) => d.status === "HALF").length,
+    absentDays: dailyBreakdown.filter((d) => d.status === "ABSENT").length,
+    holidayDays: dailyBreakdown.filter((d) => d.status === "HOLIDAY").length,
   };
 }

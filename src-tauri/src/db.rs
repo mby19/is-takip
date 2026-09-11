@@ -445,6 +445,38 @@ PRAGMA foreign_keys=ON;
 ",
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 11,
+            description: "restore_index_rate_history_revert_marker",
+            sql: "
+-- 1) Migration 10 attendance tablosunu yeniden kurarken bu indeks düştü, geri ekliyoruz.
+CREATE INDEX IF NOT EXISTS idx_attendance_date ON attendance(date);
+CREATE INDEX IF NOT EXISTS idx_payments_worker ON payments(worker_id);
+
+-- 2) Tarih etkili ucret/tip gecmisi.
+--    workers tablosu 'guncel durum' olarak kalir; gecmis hesaplar buradan cozulur.
+CREATE TABLE IF NOT EXISTS worker_rate_history (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    worker_id INTEGER NOT NULL,
+    valid_from TEXT NOT NULL,
+    daily_wage REAL NOT NULL,
+    worker_type TEXT CHECK( worker_type IN ('ORTAK', 'GUNLUK') ) NOT NULL,
+    created_at DATETIME DEFAULT (DATETIME('now', 'localtime')),
+    UNIQUE(worker_id, valid_from),
+    FOREIGN KEY(worker_id) REFERENCES workers(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_rate_history_worker ON worker_rate_history(worker_id, valid_from);
+
+-- Mevcut calisanlar icin acilis kaydi: bugune kadar gecerli olan deger.
+INSERT OR IGNORE INTO worker_rate_history (worker_id, valid_from, daily_wage, worker_type)
+SELECT id, '2000-01-01', daily_wage, worker_type FROM workers;
+
+-- 3) Geri alinan denetim kayitlari silinmek yerine isaretlenir.
+ALTER TABLE audit_logs ADD COLUMN reverted_at DATETIME;
+",
+            kind: MigrationKind::Up,
+        },
     ]
 }
 

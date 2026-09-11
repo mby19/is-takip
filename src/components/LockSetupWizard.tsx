@@ -2,6 +2,15 @@ import { useState } from "react";
 import { Lock, Unlock, Check, ShieldCheck } from "lucide-react";
 import { Button } from "./ui/button";
 import { Dialog, DialogContent } from "./ui/dialog";
+import { useToastStore } from "../stores/toastStore";
+import {
+  configureLock,
+  disableLock,
+  isLockEnabled as readLockEnabled,
+  verifySequence,
+  verifyPin,
+  LOCK_MAX_ATTEMPTS,
+} from "../lib/appLock";
 
 const EMOJIS = [
   { id: "panda", char: "🐼", name: "Panda" },
@@ -15,10 +24,9 @@ const EMOJIS = [
   { id: "crown", char: "👑", name: "Taç" },
 ];
 
-export function LockSetupWizard({ onMessage }: { onMessage?: (msg: string) => void }) {
-  const [isLockEnabled, setIsLockEnabled] = useState(
-    () => localStorage.getItem("appLockEnabled") === "true",
-  );
+export function LockSetupWizard() {
+  const addToast = useToastStore((s) => s.addToast);
+  const [isLockEnabled, setIsLockEnabled] = useState(readLockEnabled);
   const [isLockSetupOpen, setIsLockSetupOpen] = useState(false);
   const [setupStep, setSetupStep] = useState<1 | 2 | 3 | 4>(1);
   const [tempSequence, setTempSequence] = useState<string[]>([]);
@@ -32,9 +40,8 @@ export function LockSetupWizard({ onMessage }: { onMessage?: (msg: string) => vo
   const [deactivatePin, setDeactivatePin] = useState("");
   const [deactivateError, setDeactivateError] = useState(false);
 
-  const showMessage = (msg: string) => {
-    onMessage?.(msg);
-  };
+  // Kurulum sırasında PIN yalnızca bellekte tutulur; kaydedilirken özetlenir.
+  const showMessage = (msg: string) => addToast(msg, "success");
 
   const handleEmojiSetupSelect = (id: string) => {
     if (isShaking) return;
@@ -73,12 +80,15 @@ export function LockSetupWizard({ onMessage }: { onMessage?: (msg: string) => vo
     setTempPin(nextPin);
 
     if (nextPin.length === 4) {
-      localStorage.setItem("appLockEnabled", "true");
-      localStorage.setItem("appLockSequence", JSON.stringify(tempSequence));
-      localStorage.setItem("appLockPin", nextPin);
-
-      setIsLockEnabled(true);
-      setTimeout(() => setSetupStep(4), 400);
+      void configureLock(tempSequence, nextPin)
+        .then(() => {
+          setIsLockEnabled(true);
+          setTimeout(() => setSetupStep(4), 400);
+        })
+        .catch((err: unknown) => {
+          setLockSetupError(err instanceof Error ? err.message : String(err));
+          setTempPin("");
+        });
     }
   };
 
@@ -95,26 +105,27 @@ export function LockSetupWizard({ onMessage }: { onMessage?: (msg: string) => vo
     setDeactivateSequence(nextSeq);
 
     if (nextSeq.length === 3) {
-      const configuredSequence: string[] = JSON.parse(
-        localStorage.getItem("appLockSequence") || "[]",
-      );
-      const isMatch = nextSeq.every((val, idx) => val === configuredSequence[idx]);
-
-      if (isMatch) {
-        localStorage.removeItem("appLockEnabled");
-        localStorage.removeItem("appLockSequence");
-        localStorage.removeItem("appLockPin");
-        setIsLockEnabled(false);
-        setIsDeactivateOpen(false);
-        showMessage("Uygulama kilidi başarıyla kaldırıldı.");
-      } else {
+      void verifySequence(nextSeq).then(({ ok, lockedFor, attemptsLeft }) => {
+        if (ok) {
+          disableLock();
+          setIsLockEnabled(false);
+          setIsDeactivateOpen(false);
+          showMessage("Uygulama kilidi kaldırıldı.");
+          return;
+        }
         setDeactivateError(true);
         if (navigator.vibrate) navigator.vibrate([100, 50, 100]);
+        addToast(
+          lockedFor > 0
+            ? `Çok fazla hatalı deneme. ${lockedFor} saniye bekleyin.`
+            : `Desen hatalı. Kalan deneme: ${attemptsLeft}/${LOCK_MAX_ATTEMPTS}`,
+          "error",
+        );
         setTimeout(() => {
           setDeactivateError(false);
           setDeactivateSequence([]);
         }, 800);
-      }
+      });
     }
   };
 
@@ -124,22 +135,27 @@ export function LockSetupWizard({ onMessage }: { onMessage?: (msg: string) => vo
     setDeactivatePin(nextPin);
 
     if (nextPin.length === 4) {
-      const configuredPin = localStorage.getItem("appLockPin") || "";
-      if (nextPin === configuredPin) {
-        localStorage.removeItem("appLockEnabled");
-        localStorage.removeItem("appLockSequence");
-        localStorage.removeItem("appLockPin");
-        setIsLockEnabled(false);
-        setIsDeactivateOpen(false);
-        showMessage("Uygulama kilidi başarıyla kaldırıldı.");
-      } else {
+      void verifyPin(nextPin).then(({ ok, lockedFor, attemptsLeft }) => {
+        if (ok) {
+          disableLock();
+          setIsLockEnabled(false);
+          setIsDeactivateOpen(false);
+          showMessage("Uygulama kilidi kaldırıldı.");
+          return;
+        }
         setDeactivateError(true);
         if (navigator.vibrate) navigator.vibrate(150);
+        addToast(
+          lockedFor > 0
+            ? `Çok fazla hatalı deneme. ${lockedFor} saniye bekleyin.`
+            : `PIN hatalı. Kalan deneme: ${attemptsLeft}/${LOCK_MAX_ATTEMPTS}`,
+          "error",
+        );
         setTimeout(() => {
           setDeactivateError(false);
           setDeactivatePin("");
         }, 800);
-      }
+      });
     }
   };
 
@@ -227,7 +243,7 @@ export function LockSetupWizard({ onMessage }: { onMessage?: (msg: string) => vo
                 setLockSetupError(null);
                 setIsLockSetupOpen(true);
               }}
-              className="text-primary hover:underline font-black uppercase tracking-wider text-[9px]"
+              className="text-primary hover:underline font-black uppercase tracking-wider text-[10px]"
             >
               Deseni Değiştir
             </button>
@@ -285,7 +301,7 @@ export function LockSetupWizard({ onMessage }: { onMessage?: (msg: string) => vo
                     className="aspect-square rounded-2xl border-2 flex flex-col items-center justify-center bg-card hover:border-amber-400/50 hover:bg-amber-400/5 active:scale-90 transition-all border-border"
                   >
                     <span className="text-2xl filter drop-shadow-sm mb-0.5">{emoji.char}</span>
-                    <span className="text-[8px] font-black uppercase text-muted-foreground/60 tracking-wider">
+                    <span className="text-[10px] font-black uppercase text-muted-foreground/60 tracking-wider">
                       {emoji.name}
                     </span>
                   </button>
@@ -347,7 +363,7 @@ export function LockSetupWizard({ onMessage }: { onMessage?: (msg: string) => vo
                     className="aspect-square rounded-2xl border-2 flex flex-col items-center justify-center bg-card hover:border-amber-400/50 hover:bg-amber-400/5 active:scale-90 transition-all border-border"
                   >
                     <span className="text-2xl filter drop-shadow-sm mb-0.5">{emoji.char}</span>
-                    <span className="text-[8px] font-black uppercase text-muted-foreground/60 tracking-wider">
+                    <span className="text-[10px] font-black uppercase text-muted-foreground/60 tracking-wider">
                       {emoji.name}
                     </span>
                   </button>
@@ -445,8 +461,9 @@ export function LockSetupWizard({ onMessage }: { onMessage?: (msg: string) => vo
 
               <div className="p-4 rounded-xl border border-emerald-100 bg-emerald-50/20 dark:border-emerald-500/10 dark:bg-emerald-500/5 text-left space-y-2">
                 <p className="text-[10px] font-bold text-emerald-700 dark:text-emerald-400 leading-relaxed text-center">
-                  💡 Uygulamayı alta alınca otomatik kilitlenir. Şifreni unutursan kurtarma PIN'in:{" "}
-                  <strong>{localStorage.getItem("appLockPin")}</strong>
+                  💡 Uygulamayı arka plana alınca otomatik kilitlenir. Şifreni unutursan kurtarma
+                  PIN'in: <strong className="font-mono tracking-widest">{tempPin}</strong> — bu
+                  ekranı kapattıktan sonra PIN bir daha gösterilemez, not alın.
                 </p>
               </div>
 
@@ -550,7 +567,7 @@ export function LockSetupWizard({ onMessage }: { onMessage?: (msg: string) => vo
                       className="aspect-square rounded-2xl border-2 flex flex-col items-center justify-center bg-card hover:border-amber-400/50 hover:bg-amber-400/5 active:scale-90 transition-all border-border"
                     >
                       <span className="text-2xl filter drop-shadow-sm mb-0.5">{emoji.char}</span>
-                      <span className="text-[8px] font-black uppercase text-muted-foreground/60 tracking-wider">
+                      <span className="text-[10px] font-black uppercase text-muted-foreground/60 tracking-wider">
                         {emoji.name}
                       </span>
                     </button>

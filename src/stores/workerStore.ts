@@ -1,18 +1,31 @@
 import { create } from "zustand";
 import { workerRepository } from "../repositories/workerRepository";
-import type { Worker } from "../types";
+import { workerRateRepository } from "../repositories/workerRateRepository";
+import type { Worker, WorkerRate, WorkerType } from "../types";
+import { reportError } from "../lib/errorMonitoring";
+
+/** Ücret geçmişinin açılış tarihi — bu tarihten önceki her gün için geçerli. */
+export const RATE_HISTORY_EPOCH = "2000-01-01";
 
 interface WorkerState {
   workers: Worker[];
+  rateHistory: WorkerRate[];
   isLoading: boolean;
   error: string | null;
   fetchWorkers: () => Promise<void>;
-  addWorker: (name: string, daily_wage: number, worker_type: "ORTAK" | "GUNLUK") => Promise<void>;
+  fetchRateHistory: () => Promise<void>;
+  addWorker: (name: string, daily_wage: number, worker_type: WorkerType) => Promise<void>;
+  /**
+   * Çalışan bilgilerini günceller.
+   * `effectiveFrom` verilirse ücret/tip değişikliği o tarihten itibaren geçerli
+   * olur; önceki aylar eski değerlerle hesaplanmaya devam eder.
+   */
   updateWorker: (
     id: number,
     name: string,
     daily_wage: number,
-    worker_type: "ORTAK" | "GUNLUK",
+    worker_type: WorkerType,
+    effectiveFrom?: string,
   ) => Promise<void>;
   updateWorkerStatus: (id: number, is_active: boolean) => Promise<void>;
   archiveWorker: (id: number) => Promise<void>;
@@ -20,6 +33,7 @@ interface WorkerState {
 
 export const useWorkerStore = create<WorkerState>((set, get) => ({
   workers: [],
+  rateHistory: [],
   isLoading: false,
   error: null,
 
@@ -27,24 +41,48 @@ export const useWorkerStore = create<WorkerState>((set, get) => ({
     set({ isLoading: true, error: null });
     try {
       const result = await workerRepository.findAll();
-      const formatted = result.map((w) => ({
-        ...w,
-        is_active: Boolean(w.is_active),
-      }));
-      set({ workers: formatted, isLoading: false });
+      set({
+        workers: result.map((w) => ({ ...w, is_active: Boolean(w.is_active) })),
+        isLoading: false,
+      });
     } catch (error: unknown) {
       set({ error: error instanceof Error ? error.message : String(error), isLoading: false });
     }
   },
 
-  addWorker: async (name: string, daily_wage: number, worker_type: "ORTAK" | "GUNLUK") => {
+  fetchRateHistory: async () => {
+    try {
+      set({ rateHistory: await workerRateRepository.findAll() });
+    } catch (error: unknown) {
+      // Ücret geçmişi okunamazsa hesaplama güncel değerlere düşer (bozulmaz).
+      reportError(error instanceof Error ? error : new Error(String(error)), {
+        scope: "fetchRateHistory",
+      });
+    }
+  },
+
+  addWorker: async (name: string, daily_wage: number, worker_type: WorkerType) => {
     set({ isLoading: true, error: null });
     try {
       await workerRepository.create(name, daily_wage, worker_type);
+
+      // Açılış ücret kaydı: geçmişe dönük hesaplarda da bu değer kullanılsın.
+      const created = await workerRepository.findIdByName(name);
+      if (created.length > 0) {
+        await workerRateRepository.upsert(
+          created[0].id,
+          RATE_HISTORY_EPOCH,
+          daily_wage,
+          worker_type,
+        );
+      }
+
       await get().fetchWorkers();
+      await get().fetchRateHistory();
       set({ isLoading: false });
     } catch (error: unknown) {
       set({ error: error instanceof Error ? error.message : String(error), isLoading: false });
+      throw error;
     }
   },
 
@@ -52,15 +90,32 @@ export const useWorkerStore = create<WorkerState>((set, get) => ({
     id: number,
     name: string,
     daily_wage: number,
-    worker_type: "ORTAK" | "GUNLUK",
+    worker_type: WorkerType,
+    effectiveFrom?: string,
   ) => {
     set({ isLoading: true, error: null });
     try {
+      const current = get().workers.find((w) => w.id === id);
+      const rateChanged =
+        !current || current.daily_wage !== daily_wage || current.worker_type !== worker_type;
+
       await workerRepository.update(id, name, daily_wage, worker_type);
+
+      if (rateChanged) {
+        await workerRateRepository.upsert(
+          id,
+          effectiveFrom || RATE_HISTORY_EPOCH,
+          daily_wage,
+          worker_type,
+        );
+      }
+
       await get().fetchWorkers();
+      await get().fetchRateHistory();
       set({ isLoading: false });
     } catch (error: unknown) {
       set({ error: error instanceof Error ? error.message : String(error), isLoading: false });
+      throw error;
     }
   },
 
@@ -70,6 +125,7 @@ export const useWorkerStore = create<WorkerState>((set, get) => ({
       await get().fetchWorkers();
     } catch (error: unknown) {
       set({ error: error instanceof Error ? error.message : String(error) });
+      throw error;
     }
   },
 
@@ -79,6 +135,7 @@ export const useWorkerStore = create<WorkerState>((set, get) => ({
       await get().fetchWorkers();
     } catch (error: unknown) {
       set({ error: error instanceof Error ? error.message : String(error) });
+      throw error;
     }
   },
 }));

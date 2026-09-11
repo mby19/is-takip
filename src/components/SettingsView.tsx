@@ -1,5 +1,4 @@
 import { useState } from "react";
-import { createPortal } from "react-dom";
 import { useThemeStore, PALETTE_PREVIEW } from "../stores/themeStore";
 import type { ThemePalette } from "../stores/themeStore";
 import {
@@ -11,14 +10,14 @@ import {
   Smartphone,
   Palette,
   Bell,
-  Check,
   AlertTriangle,
-  X,
 } from "lucide-react";
 import { Button } from "./ui/button";
 import { BackupSection } from "./BackupSection";
 import { LockSetupWizard } from "./LockSetupWizard";
 import { NotificationDialog } from "./NotificationDialog";
+import { getTriggerSetupError } from "../lib/db";
+import { APP_VERSION } from "../lib/appInfo";
 
 const PALETTES: { id: ThemePalette; label: string; desc: string }[] = [
   { id: "ocean", label: "Okyanus", desc: "Sakin mavi, sıcak zemin" },
@@ -35,8 +34,8 @@ export function SettingsView({
   onBack: () => void;
   onNavigateLogs: () => void;
 }) {
-  const [message, setMessage] = useState("");
   const [notifOpen, setNotifOpen] = useState(false);
+  const triggerError = getTriggerSetupError();
   const themeMode = useThemeStore((s) => s.mode);
   const themePalette = useThemeStore((s) => s.palette);
   const toggleMode = useThemeStore((s) => s.toggleMode);
@@ -44,7 +43,7 @@ export function SettingsView({
 
   return (
     <div className="flex flex-col h-full bg-background">
-      <header className="pt-14 pb-4 px-5 border-b bg-card shrink-0 flex items-center gap-3">
+      <header className="pt-safe-header pb-4 px-5 border-b bg-card shrink-0 flex items-center gap-3">
         <button
           onClick={onBack}
           className="w-10 h-10 rounded-xl bg-muted/60 flex items-center justify-center active:scale-90 transition-all shrink-0"
@@ -57,14 +56,31 @@ export function SettingsView({
           </div>
           <div>
             <h1 className="text-lg font-black tracking-tight">Ayarlar</h1>
-            <p className="text-[9px] font-bold text-muted-foreground tracking-wider uppercase">
+            <p className="text-[10px] font-bold text-muted-foreground tracking-wider uppercase">
               Sistem & Yönetim
             </p>
           </div>
         </div>
       </header>
 
-      <div className="flex-1 overflow-y-auto p-5 space-y-8 pb-28 stagger-children">
+      <div className="flex-1 overflow-y-auto p-5 space-y-8 pb-safe-content stagger-children">
+        {triggerError && (
+          <div className="p-4 rounded-2xl border-2 border-amber-300 dark:border-amber-500/40 bg-amber-50 dark:bg-amber-500/10 flex gap-3">
+            <AlertTriangle className="w-5 h-5 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+            <div className="min-w-0">
+              <h3 className="text-xs font-black text-amber-700 dark:text-amber-400">
+                Denetim kaydı devre dışı
+              </h3>
+              <p className="text-[11px] font-medium text-amber-700/80 dark:text-amber-300/80 mt-1 leading-relaxed">
+                Değişiklik kayıtları tutulamıyor, bu yüzden «Geri Al» özelliği güvenilir değil.
+                Uygulamayı yeniden başlatmayı deneyin.
+              </p>
+              <p className="text-[10px] font-mono text-amber-700/70 dark:text-amber-300/70 mt-1.5 break-all">
+                {triggerError}
+              </p>
+            </div>
+          </div>
+        )}
         <div className="space-y-4">
           <h2 className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-1 flex items-center gap-1.5">
             <Palette className="w-3.5 h-3.5" /> Görünüm & Arayüz
@@ -103,7 +119,7 @@ export function SettingsView({
                     />
                   </div>
                   <span
-                    className={`text-[8px] font-black uppercase tracking-wider ${
+                    className={`text-[10px] font-black uppercase tracking-wider ${
                       isActive ? "text-primary" : "text-muted-foreground"
                     }`}
                   >
@@ -158,7 +174,7 @@ export function SettingsView({
             </div>
           </Button>
 
-          <LockSetupWizard onMessage={setMessage} />
+          <LockSetupWizard />
 
           <Button
             variant="outline"
@@ -177,7 +193,7 @@ export function SettingsView({
           <NotificationDialog isOpen={notifOpen} onClose={() => setNotifOpen(false)} />
         </div>
 
-        <BackupSection onMessage={setMessage} />
+        <BackupSection />
 
         <div className="space-y-4 pt-6 border-t border-dashed">
           <div className="flex flex-col items-center justify-center gap-2 opacity-60">
@@ -186,57 +202,14 @@ export function SettingsView({
             </div>
             <div className="text-center">
               <h3 className="text-xs font-black tracking-widest uppercase">İş Takip Mobile</h3>
-              <p className="text-[10px] font-bold mt-0.5">Versiyon 1.0.0</p>
+              <p className="text-[10px] font-bold mt-0.5">Versiyon {APP_VERSION}</p>
             </div>
-            <p className="text-[8px] mt-2 font-bold uppercase tracking-widest">
-              © 2026 Tüm Hakları Saklıdır.
+            <p className="text-[10px] mt-2 font-bold uppercase tracking-widest">
+              © {new Date().getFullYear()} Tüm Hakları Saklıdır.
             </p>
           </div>
         </div>
       </div>
-
-      {message &&
-        createPortal(
-          <div
-            className={`fixed bottom-6 left-4 right-4 z-9999 p-4 rounded-2xl bg-card/95 backdrop-blur-md border shadow-2xl flex items-start gap-3 animate-in slide-in-from-bottom duration-300 ${
-              message.startsWith("Hata") ? "border-rose-500/30" : "border-emerald-500/30"
-            }`}
-          >
-            <div
-              className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${
-                message.startsWith("Hata") ? "bg-rose-500/10" : "bg-emerald-500/10"
-              }`}
-            >
-              {message.startsWith("Hata") ? (
-                <AlertTriangle className="w-5 h-5 text-rose-500" />
-              ) : (
-                <Check className="w-5 h-5 text-emerald-500" />
-              )}
-            </div>
-            <div className="flex-1 min-w-0">
-              <h4
-                className={`text-xs font-black ${
-                  message.startsWith("Hata")
-                    ? "text-rose-600 dark:text-rose-400"
-                    : "text-emerald-600 dark:text-emerald-400"
-                }`}
-              >
-                {message.startsWith("Hata") ? "İşlem Başarısız" : "Başarılı"}
-              </h4>
-              <p className="text-[10px] font-bold text-muted-foreground mt-0.5 leading-relaxed break-all select-all">
-                {message.startsWith("Hata") ? message.replace("Hata: ", "") : message}
-              </p>
-            </div>
-            <button
-              onClick={() => setMessage("")}
-              className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-muted active:scale-90 transition-all shrink-0"
-              aria-label="Kapat"
-            >
-              <X className="w-4 h-4 text-muted-foreground" />
-            </button>
-          </div>,
-          document.body,
-        )}
     </div>
   );
 }

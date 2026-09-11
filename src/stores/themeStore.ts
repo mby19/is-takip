@@ -29,6 +29,10 @@ interface ThemeStore {
 const getInitialMode = (): "light" | "dark" => {
   const stored = localStorage.getItem("theme-mode");
   if (stored === "light" || stored === "dark") return stored;
+  // Kullanıcı seçim yapmadıysa cihazın tercihini izle.
+  if (typeof window !== "undefined" && window.matchMedia) {
+    return window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+  }
   return "dark";
 };
 
