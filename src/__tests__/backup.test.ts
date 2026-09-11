@@ -38,6 +38,21 @@ describe("validateBackup", () => {
     expect(result.payments[0].description).toBeNull();
   });
 
+  it("dönem kilidi alanı olmayan eski yedeği kabul eder", () => {
+    const result = validateBackup(v1Backup);
+    expect(result.closed_periods).toEqual([]);
+  });
+
+  it("dönem kilitlerini korur", () => {
+    const result = validateBackup({
+      ...v1Backup,
+      closed_periods: [{ period: "2026-01", closed_at: "2026-02-01 09:00:00", note: null }],
+    });
+    expect(result.closed_periods).toEqual([
+      { period: "2026-01", closed_at: "2026-02-01 09:00:00", note: null },
+    ]);
+  });
+
   it("v1 yedeğinde eksik ücret geçmişini çalışanlardan üretir", () => {
     const result = validateBackup(v1Backup);
     expect(result.rates).toHaveLength(1);
@@ -143,6 +158,13 @@ describe("summarizeBackupFile", () => {
       payments: 1,
       audit_logs: 0,
     });
+  });
+
+  it("dönem kilitlerini sayar", () => {
+    const summary = summarizeBackupFile(
+      JSON.stringify({ ...v1Backup, closed_periods: [{ period: "2026-01", closed_at: null }] }),
+    );
+    expect(summary.closed_periods).toBe(1);
   });
 
   it("bozuk JSON'da hata verir", () => {

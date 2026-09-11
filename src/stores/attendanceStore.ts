@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { attendanceRepository } from "../repositories/attendanceRepository";
 import type { Attendance, AttendanceStatus } from "../types";
 import { reportError } from "../lib/errorMonitoring";
+import { isDateInClosedPeriod, ClosedPeriodError } from "./periodStore";
 
 interface AttendanceState {
   attendances: Attendance[];
@@ -58,6 +59,8 @@ export const useAttendanceStore = create<AttendanceState>((set, get) => ({
   markAttendance: async (worker_id: number, date: string, status: AttendanceStatus | null) => {
     const wId = Number(worker_id);
     const dStr = String(date).trim();
+
+    if (isDateInClosedPeriod(dStr)) throw new ClosedPeriodError(dStr);
 
     const previous = get().attendances;
 

@@ -5,6 +5,7 @@ import { sqlLiteral } from "../lib/sql";
 import type { AuditLog } from "../types";
 import { getRevertStrategy, createRevertContext } from "./revertStrategies";
 import { reportError } from "../lib/errorMonitoring";
+import { isDateInClosedPeriod, ClosedPeriodError } from "./periodStore";
 
 interface AuditLogState {
   logs: AuditLog[];
@@ -76,6 +77,13 @@ export const useAuditLogStore = create<AuditLogState>((set, get) => ({
       }
 
       const ctx = createRevertContext(log);
+
+      // Geri alma kapalı bir dönemin verisine dokunuyorsa engellenir.
+      const affectedDate = ctx.oldData?.date || ctx.newData?.date;
+      if (affectedDate && isDateInClosedPeriod(affectedDate)) {
+        throw new ClosedPeriodError(affectedDate);
+      }
+
       const statements = await strategy.execute(ctx);
 
       const revertNote = JSON.stringify({

@@ -32,6 +32,7 @@ export interface BackupSummary {
   payments: number;
   audit_logs: number;
   worker_rate_history: number;
+  closed_periods: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -106,6 +107,7 @@ interface NormalizedBackup {
     date: string;
     description: string | null;
   }[];
+  closed_periods: { period: string; closed_at: string | null; note: string | null }[];
   audit_logs: {
     id: number;
     action_type: string;
@@ -220,6 +222,17 @@ export function validateBackup(raw: unknown): NormalizedBackup {
     };
   });
 
+  // Dönem kilitleri. Eski yedeklerde bu alan yok — o zaman hiç kapalı dönem
+  // yokmuş gibi yüklenir (alan ekleme geriye dönük uyumludur, bkz. ADR-0004).
+  const closed_periods = asArray(b.closed_periods, "closed_periods").map((r, i) => {
+    const row = (r ?? {}) as Record<string, unknown>;
+    return {
+      period: text(row.period, "closed_periods.period", i),
+      closed_at: row.closed_at === undefined ? null : String(row.closed_at),
+      note: row.note === null || row.note === undefined ? null : String(row.note),
+    };
+  });
+
   // v1 yedeklerinde ücret geçmişi yok — çalışanların güncel değerlerinden
   // açılış kaydı üretilir. Böylece eski yedekler kayıpsız yüklenir.
   const rawRates = asArray(b.worker_rate_history, "worker_rate_history");
@@ -255,6 +268,7 @@ export function validateBackup(raw: unknown): NormalizedBackup {
     daily_metrics,
     payments,
     audit_logs,
+    closed_periods,
   };
 }
 
@@ -269,6 +283,7 @@ const buildBackupJson = async (): Promise<{ json: string; summary: BackupSummary
   const daily_metrics = await fetchQuery("SELECT * FROM daily_metrics");
   const payments = await fetchQuery("SELECT * FROM payments");
   const audit_logs = await fetchQuery("SELECT * FROM audit_logs");
+  const closed_periods = await fetchQuery("SELECT * FROM closed_periods");
 
   const exported_at = new Date().toISOString();
   const backup = {
@@ -282,6 +297,7 @@ const buildBackupJson = async (): Promise<{ json: string; summary: BackupSummary
     daily_metrics,
     payments,
     audit_logs,
+    closed_periods,
   };
 
   return {
@@ -295,6 +311,7 @@ const buildBackupJson = async (): Promise<{ json: string; summary: BackupSummary
       daily_metrics: daily_metrics.length,
       payments: payments.length,
       audit_logs: audit_logs.length,
+      closed_periods: closed_periods.length,
     },
   };
 };
@@ -411,6 +428,7 @@ export const importDatabase = async (jsonString: string): Promise<ImportResult> 
     "DELETE FROM payments",
     "DELETE FROM daily_metrics",
     "DELETE FROM worker_rate_history",
+    "DELETE FROM closed_periods",
     "DELETE FROM workers",
     "DELETE FROM sqlite_sequence WHERE name IN ('workers', 'attendance', 'payments', 'daily_metrics', 'audit_logs', 'worker_rate_history')",
 
@@ -472,6 +490,12 @@ export const importDatabase = async (jsonString: string): Promise<ImportResult> 
       ]),
     ),
 
+    ...chunkedInsert(
+      "closed_periods",
+      ["period", "closed_at", "note"],
+      data.closed_periods.map((c) => [c.period, c.closed_at, c.note]),
+    ),
+
     ...CREATE_TRIGGERS,
     `PRAGMA user_version = ${TRIGGER_SCHEMA_VERSION}`,
 
@@ -498,6 +522,7 @@ export const importDatabase = async (jsonString: string): Promise<ImportResult> 
       daily_metrics: data.daily_metrics.length,
       payments: data.payments.length,
       audit_logs: data.audit_logs.length,
+      closed_periods: data.closed_periods.length,
     },
   };
 };
@@ -514,5 +539,6 @@ export function summarizeBackupFile(jsonString: string): BackupSummary {
     daily_metrics: data.daily_metrics.length,
     payments: data.payments.length,
     audit_logs: data.audit_logs.length,
+    closed_periods: data.closed_periods.length,
   };
 }

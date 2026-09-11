@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { metricsRepository } from "../repositories/metricsRepository";
 import type { DailyMetric } from "../types";
 import { reportError } from "../lib/errorMonitoring";
+import { isDateInClosedPeriod, ClosedPeriodError } from "./periodStore";
 
 interface MetricsState {
   metrics: DailyMetric[];
@@ -60,6 +61,9 @@ export const useMetricsStore = create<MetricsState>((set, get) => ({
     is_holiday: boolean,
   ) => {
     const dStr = String(date).trim();
+
+    if (isDateInClosedPeriod(dStr)) throw new ClosedPeriodError(dStr);
+
     const p = Number(production_amount) || 0;
     const t = Number(total_earned) || 0;
     const e = Number(extra_expenses) || 0;

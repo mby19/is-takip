@@ -1,4 +1,3 @@
-import { useState } from "react";
 import { useThemeStore, PALETTE_PREVIEW } from "../stores/themeStore";
 import type { ThemePalette } from "../stores/themeStore";
 import {
@@ -9,13 +8,12 @@ import {
   Sun,
   Smartphone,
   Palette,
-  Bell,
   AlertTriangle,
 } from "lucide-react";
 import { Button } from "./ui/button";
 import { BackupSection } from "./BackupSection";
 import { LockSetupWizard } from "./LockSetupWizard";
-import { NotificationDialog } from "./NotificationDialog";
+import { PeriodLockSection } from "./PeriodLockSection";
 import { getTriggerSetupError } from "../lib/db";
 import { APP_VERSION } from "../lib/appInfo";
 
@@ -34,7 +32,6 @@ export function SettingsView({
   onBack: () => void;
   onNavigateLogs: () => void;
 }) {
-  const [notifOpen, setNotifOpen] = useState(false);
   const triggerError = getTriggerSetupError();
   const themeMode = useThemeStore((s) => s.mode);
   const themePalette = useThemeStore((s) => s.palette);
@@ -169,29 +166,15 @@ export function SettingsView({
             <div className="text-left">
               <div className="text-sm font-black">Sistem Geçmişi</div>
               <div className="text-[10px] text-muted-foreground font-bold tracking-wide mt-0.5">
-                Kim ne zaman ne yapmış, hepsi burada
+                Tüm değişiklikler, geri alma dahil
               </div>
             </div>
           </Button>
 
           <LockSetupWizard />
-
-          <Button
-            variant="outline"
-            onClick={() => setNotifOpen(true)}
-            className="w-full h-16 rounded-2xl justify-start px-5 font-bold gap-4 border-2 hover:border-primary/50 hover:bg-primary/5 transition-all active:scale-[0.98]"
-          >
-            <Bell className="w-6 h-6 text-primary" />
-            <div className="text-left">
-              <div className="text-sm font-black">Bildirimler</div>
-              <div className="text-[10px] text-muted-foreground font-bold tracking-wide mt-0.5">
-                Son işlem kayıtlarını görüntüle
-              </div>
-            </div>
-          </Button>
-
-          <NotificationDialog isOpen={notifOpen} onClose={() => setNotifOpen(false)} />
         </div>
+
+        <PeriodLockSection />
 
         <BackupSection />
 

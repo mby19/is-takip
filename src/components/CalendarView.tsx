@@ -216,16 +216,16 @@ export function CalendarView({ onDayClick, onWorkerClick }: CalendarViewProps) {
   );
 
   useEffect(() => {
-    const loadAllData = async () => {
-      const startStr = format(monthStart, "yyyy-MM-dd");
-      const endStr = format(monthEnd, "yyyy-MM-dd");
-      await Promise.all([
-        fetchMetricsByDateRange(startStr, endStr),
-        fetchAttendanceByDateRange(startStr, endStr),
-      ]);
-    };
-    loadAllData();
-  }, [currentDate, fetchMetricsByDateRange, fetchAttendanceByDateRange, monthStart, monthEnd]);
+    // Aralık burada hesaplanır: monthStart/monthEnd her render'da yeni Date
+    // nesnesi olduğu için bağımlılık listesine konulamaz — effect kendini
+    // sonsuz döngüye sokar ve takvim yükleme durumundan hiç çıkmaz.
+    const startStr = format(startOfMonth(currentDate), "yyyy-MM-dd");
+    const endStr = format(endOfMonth(currentDate), "yyyy-MM-dd");
+    void Promise.all([
+      fetchMetricsByDateRange(startStr, endStr),
+      fetchAttendanceByDateRange(startStr, endStr),
+    ]);
+  }, [currentDate, fetchMetricsByDateRange, fetchAttendanceByDateRange]);
 
   useEffect(() => {
     if (format(currentDate, "yyyy-MM") !== format(new Date(), "yyyy-MM")) return;

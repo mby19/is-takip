@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { paymentRepository } from "../repositories/paymentRepository";
 import type { Payment } from "../types";
 import { reportError } from "../lib/errorMonitoring";
+import { isDateInClosedPeriod, ClosedPeriodError } from "./periodStore";
 
 interface PaymentState {
   payments: Payment[];
@@ -33,6 +34,7 @@ export const usePaymentStore = create<PaymentState>((set, get) => ({
   },
 
   addPayment: async (worker_id: number, amount: number, date: string, description?: string) => {
+    if (isDateInClosedPeriod(date)) throw new ClosedPeriodError(date);
     try {
       await paymentRepository.create(worker_id, amount, date, description);
       await get().fetchWorkerPayments(worker_id);
@@ -45,6 +47,8 @@ export const usePaymentStore = create<PaymentState>((set, get) => ({
   },
 
   deletePayment: async (id: number, worker_id: number) => {
+    const target = get().payments.find((p) => p.id === id);
+    if (target && isDateInClosedPeriod(target.date)) throw new ClosedPeriodError(target.date);
     try {
       await paymentRepository.remove(id);
       await get().fetchWorkerPayments(worker_id);

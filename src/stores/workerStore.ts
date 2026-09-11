@@ -3,6 +3,7 @@ import { workerRepository } from "../repositories/workerRepository";
 import { workerRateRepository } from "../repositories/workerRateRepository";
 import type { Worker, WorkerRate, WorkerType } from "../types";
 import { reportError } from "../lib/errorMonitoring";
+import { isDateInClosedPeriod, ClosedPeriodError } from "./periodStore";
 
 /** Ücret geçmişinin açılış tarihi — bu tarihten önceki her gün için geçerli. */
 export const RATE_HISTORY_EPOCH = "2000-01-01";
@@ -102,12 +103,12 @@ export const useWorkerStore = create<WorkerState>((set, get) => ({
       await workerRepository.update(id, name, daily_wage, worker_type);
 
       if (rateChanged) {
-        await workerRateRepository.upsert(
-          id,
-          effectiveFrom || RATE_HISTORY_EPOCH,
-          daily_wage,
-          worker_type,
-        );
+        // Kapalı bir dönemden itibaren geçerli kılmak o ayın hakedişini
+        // yeniden hesaplardı — dönem kilidinin engellediği tam olarak bu.
+        const from = effectiveFrom || RATE_HISTORY_EPOCH;
+        if (isDateInClosedPeriod(from)) throw new ClosedPeriodError(from);
+
+        await workerRateRepository.upsert(id, from, daily_wage, worker_type);
       }
 
       await get().fetchWorkers();

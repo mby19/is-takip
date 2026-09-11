@@ -79,3 +79,37 @@ export const removeFileFromDownloads = async (fileName: string): Promise<void> =
   const { remove, BaseDirectory } = await import("@tauri-apps/plugin-fs");
   await remove(fileName, { baseDir: BaseDirectory.Download });
 };
+
+/**
+ * Kullanıcıya kaydetme yeri seçtirir ve dosyayı oraya yazar.
+ *
+ * Neden gerekli: `BaseDirectory.Download` Android'de telefonun gerçek
+ * İndirilenler klasörü değil, `Android/data/<paket>/files/Download` altıdır.
+ * Orası Android 11+ ile dosya yöneticisinden gezilemez ve uygulama silinince
+ * birlikte silinir. Kaydetme diyaloğu (SAF) ise gerçek İndirilenler, Google
+ * Drive ve telefondaki diğer hedefleri sunar.
+ *
+ * Kullanıcı vazgeçerse `null` döner.
+ */
+export const saveFileWithPicker = async (
+  fileName: string,
+  data: Uint8Array | string,
+): Promise<string | null> => {
+  const { save } = await import("@tauri-apps/plugin-dialog");
+  const { writeFile, writeTextFile } = await import("@tauri-apps/plugin-fs");
+
+  const extension = fileName.split(".").pop() || "";
+  const target = await save({
+    defaultPath: fileName,
+    filters: extension ? [{ name: extension.toUpperCase(), extensions: [extension] }] : undefined,
+  });
+
+  if (!target) return null;
+
+  if (typeof data === "string") {
+    await writeTextFile(target, data);
+  } else {
+    await writeFile(target, data);
+  }
+  return target;
+};

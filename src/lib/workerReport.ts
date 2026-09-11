@@ -2,7 +2,7 @@ import { format, parseISO } from "date-fns";
 import { tr } from "date-fns/locale";
 import type { Worker, Payment } from "../types";
 import type { WorkerStats } from "../utils/calculations";
-import { isTauri, saveFileToDownloads } from "./tauri";
+import { isTauri, saveFileToDownloads, saveFileWithPicker } from "./tauri";
 
 type AutoTableOptions = Record<string, unknown>;
 
@@ -31,14 +31,17 @@ const money = (n: number) => `${Math.round(n).toLocaleString("tr-TR")} TL`;
  * Aylık hakediş raporunu PDF olarak üretir ve kaydeder.
  *
  * jsPDF yalnızca bu fonksiyon çağrıldığında yüklenir — açılışta paketlenmez.
- * Kaydedilen dosyanın adını döndürür.
+ *
+ * Hedefi kullanıcı seçer (Android'de SAF; İndirilenler, Drive vb.). Böylece
+ * rapor bulunabilir bir yere iner. Diyalog kullanılamazsa uygulama klasörüne
+ * düşülür. Kullanıcı vazgeçerse `null` döner.
  */
 export async function exportWorkerReport(
   worker: Worker,
   currentMonth: Date,
   stats: WorkerStats,
   payments: readonly Payment[],
-): Promise<string> {
+): Promise<string | null> {
   const [{ default: JsPDF }] = await Promise.all([import("jspdf"), import("jspdf-autotable")]);
   const { registerTurkishFont } = await import("./pdfFont");
 
@@ -113,11 +116,17 @@ export async function exportWorkerReport(
 
   const fileName = `${worker.name.replace(/[^\p{L}\p{N}]+/gu, "_")}_${monthPrefix}_Raporu.pdf`;
 
-  if (isTauri()) {
-    await saveFileToDownloads(fileName, new Uint8Array(doc.output("arraybuffer")));
-  } else {
+  if (!isTauri()) {
     doc.save(fileName);
+    return fileName;
   }
 
-  return fileName;
+  const bytes = new Uint8Array(doc.output("arraybuffer"));
+  try {
+    return await saveFileWithPicker(fileName, bytes);
+  } catch {
+    // Diyalog açılamadıysa (izin/eklenti sorunu) sessizce kaybetme.
+    await saveFileToDownloads(fileName, bytes);
+    return fileName;
+  }
 }

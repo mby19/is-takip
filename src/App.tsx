@@ -9,11 +9,13 @@ import { OfflineIndicator } from "./components/OfflineIndicator";
 import { getDb } from "./lib/db";
 import { isLockEnabled } from "./lib/appLock";
 import { reportError } from "./lib/errorMonitoring";
+import { pruneAuditLogs } from "./lib/retention";
 import { Button } from "./components/ui/button";
 import { useWorkerStore } from "./stores/workerStore";
+import { usePeriodStore } from "./stores/periodStore";
 import { useThemeStore } from "./stores/themeStore";
 import { useToastStore } from "./stores/toastStore";
-import { Users, CalendarDays, Settings, ClipboardList } from "lucide-react";
+import { Users, CalendarDays, Settings, ClipboardList, Scale } from "lucide-react";
 import type { Worker } from "./types";
 
 // Ağır ekranlar yalnızca açıldıklarında yüklenir — açılış süresi ve paket boyutu düşer.
@@ -26,6 +28,9 @@ const AuditLogView = lazy(() =>
 const SettingsView = lazy(() =>
   import("./components/SettingsView").then((m) => ({ default: m.SettingsView })),
 );
+const MonthSummaryScreen = lazy(() =>
+  import("./components/MonthSummaryScreen").then((m) => ({ default: m.MonthSummaryScreen })),
+);
 
 const LoadingSpinner = () => (
   <div className="flex-1 flex items-center justify-center">
@@ -37,6 +42,7 @@ function App() {
   type Screen =
     | { kind: "calendar" }
     | { kind: "workers" }
+    | { kind: "summary" }
     | { kind: "settings" }
     | { kind: "logs" }
     | { kind: "worker-detail"; worker: Worker };
@@ -81,7 +87,7 @@ function App() {
     });
   }, []);
 
-  const switchTab = useCallback((kind: "calendar" | "workers" | "settings") => {
+  const switchTab = useCallback((kind: "calendar" | "workers" | "summary" | "settings") => {
     setNavStack([{ kind }]);
   }, []);
 
@@ -127,6 +133,7 @@ function App() {
 
   const fetchWorkers = useWorkerStore((s) => s.fetchWorkers);
   const fetchRateHistory = useWorkerStore((s) => s.fetchRateHistory);
+  const fetchClosedPeriods = usePeriodStore((s) => s.fetchClosedPeriods);
 
   /**
    * Uygulama arka plana alındığında kilitler.
@@ -150,7 +157,11 @@ function App() {
         if (!isMounted) return;
         await fetchWorkers();
         await fetchRateHistory();
+        await fetchClosedPeriods();
         setDbReady(true);
+
+        // Bakım işi — açılışı bloklamaz.
+        void pruneAuditLogs();
       } catch (err: unknown) {
         if (!isMounted) return;
         const message = err instanceof Error ? err.message : String(err);
@@ -163,7 +174,7 @@ function App() {
     return () => {
       isMounted = false;
     };
-  }, [fetchWorkers, fetchRateHistory]);
+  }, [fetchWorkers, fetchRateHistory, fetchClosedPeriods]);
 
   if (dbError) {
     return (
@@ -253,6 +264,13 @@ function App() {
                           />
                         </div>
                       );
+                    case "summary":
+                      return (
+                        <MonthSummaryScreen
+                          key="summary"
+                          onWorkerClick={(w) => navigateTo({ kind: "worker-detail", worker: w })}
+                        />
+                      );
                     case "workers":
                       return (
                         <WorkersScreen
@@ -283,6 +301,7 @@ function App() {
               {[
                 { id: "calendar" as const, icon: CalendarDays, label: "Takvim" },
                 { id: "workers" as const, icon: Users, label: "Kişiler" },
+                { id: "summary" as const, icon: Scale, label: "Ay Sonu" },
                 { id: "settings" as const, icon: Settings, label: "Ayarlar" },
               ].map((item) => {
                 const isActive = currentScreen.kind === item.id;
@@ -290,7 +309,7 @@ function App() {
                 return (
                   <button
                     key={item.id}
-                    className={`flex flex-col items-center gap-0.5 py-2 px-5 rounded-xl transition-all active:scale-90 ${isActive ? "text-primary" : "text-muted-foreground"}`}
+                    className={`flex flex-col items-center gap-0.5 py-2 px-3.5 rounded-xl transition-all active:scale-90 ${isActive ? "text-primary" : "text-muted-foreground"}`}
                     onClick={() => switchTab(item.id)}
                     aria-label={item.label}
                     aria-current={isActive ? "page" : undefined}

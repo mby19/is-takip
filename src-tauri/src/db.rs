@@ -477,6 +477,20 @@ ALTER TABLE audit_logs ADD COLUMN reverted_at DATETIME;
 ",
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 12,
+            description: "closed_periods",
+            sql: "
+-- Kapatilmis donemler. Odemesi yapilmis bir ay salt okunur hale gelir;
+-- degistirmek icin once acmak gerekir ve iki islem de denetim kaydina duser.
+CREATE TABLE IF NOT EXISTS closed_periods (
+    period TEXT PRIMARY KEY,
+    closed_at DATETIME DEFAULT (DATETIME('now', 'localtime')),
+    note TEXT
+);
+",
+            kind: MigrationKind::Up,
+        },
     ]
 }
 

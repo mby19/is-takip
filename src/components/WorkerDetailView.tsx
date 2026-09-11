@@ -140,8 +140,8 @@ export function WorkerDetailView({ worker, onBack }: WorkerDetailViewProps) {
     if (isExporting) return;
     setIsExporting(true);
     try {
-      const fileName = await exportWorkerReport(worker, currentMonth, stats, payments);
-      addToast(`Rapor indirildi: ${fileName}`, "success");
+      const saved = await exportWorkerReport(worker, currentMonth, stats, payments);
+      if (saved) addToast(`Rapor kaydedildi: ${saved}`, "success");
     } catch (e: unknown) {
       console.error("[PDF] Export error:", e);
       addToast(`Rapor oluşturulamadı: ${e instanceof Error ? e.message : String(e)}`, "error");

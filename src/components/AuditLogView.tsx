@@ -14,6 +14,8 @@ import {
   ChevronDown,
   AlertCircle,
   History,
+  Lock,
+  LockOpen,
 } from "lucide-react";
 import { format, parseISO } from "date-fns";
 import { tr } from "date-fns/locale";
@@ -119,6 +121,20 @@ export function AuditLogView({ onBack }: { onBack: () => void }) {
   const renderLog = (log: AuditLog) => {
     const nd = parseLogData(log.new_data);
     const od = parseLogData(log.old_data);
+
+    // Dönem kilidi
+    if (log.entity_table === "closed_periods") {
+      const label = nd?.label || nd?.period || "";
+      return log.action_type === "CLOSE_PERIOD" ? (
+        <p>
+          <b className="text-sky-600 dark:text-sky-400">{label}</b> dönemi kapatıldı
+        </p>
+      ) : (
+        <p>
+          <b className="text-amber-600 dark:text-amber-500">{label}</b> dönemi yeniden açıldı
+        </p>
+      );
+    }
 
     // Çalışan ekleme
     if (log.entity_table === "workers" && log.action_type === "INSERT") {
@@ -471,6 +487,8 @@ export function AuditLogView({ onBack }: { onBack: () => void }) {
     if (t === "REVERT") return <RotateCcw className="w-3.5 h-3.5 text-sky-500 shrink-0" />;
     if (t === "EXPORT" || t === "IMPORT")
       return <History className="w-3.5 h-3.5 text-primary shrink-0" />;
+    if (t === "CLOSE_PERIOD") return <Lock className="w-3.5 h-3.5 text-sky-500 shrink-0" />;
+    if (t === "REOPEN_PERIOD") return <LockOpen className="w-3.5 h-3.5 text-amber-500 shrink-0" />;
     return <Trash2 className="w-3.5 h-3.5 text-rose-500 shrink-0" />;
   };
 

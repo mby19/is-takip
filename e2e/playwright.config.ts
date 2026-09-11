@@ -6,7 +6,7 @@ export default defineConfig({
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,
   workers: process.env.CI ? 1 : undefined,
-  reporter: "html",
+  reporter: process.env.CI ? "list" : "html",
   use: {
     baseURL: "http://localhost:1420",
     trace: "on-first-retry",
@@ -22,6 +22,9 @@ export default defineConfig({
     },
   ],
   webServer: {
+    // Dev sunucusu depo kökündeki script; yapılandırma e2e/ içinde olduğu için
+    // cwd açıkça köke alınır.
+    cwd: "..",
     command: "npm run dev",
     url: "http://localhost:1420",
     reuseExistingServer: !process.env.CI,

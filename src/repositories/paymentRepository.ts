@@ -2,6 +2,9 @@ import { fetchQuery, executeQuery } from "../lib/db";
 import type { Payment } from "../types";
 
 export const paymentRepository = {
+  findAll: (): Promise<Payment[]> =>
+    fetchQuery<Payment>("SELECT * FROM payments ORDER BY date DESC, id DESC"),
+
   findByWorker: (worker_id: number): Promise<Payment[]> =>
     fetchQuery<Payment>("SELECT * FROM payments WHERE worker_id = ? ORDER BY date DESC, id DESC", [
       worker_id,

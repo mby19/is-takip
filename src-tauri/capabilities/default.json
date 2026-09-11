@@ -18,6 +18,9 @@
     "fs:allow-download-write",
     "fs:allow-download-write-recursive",
     "fs:allow-stat",
-    "fs:allow-remove"
+    "fs:allow-remove",
+    "dialog:default",
+    "dialog:allow-save",
+    "fs:allow-write-file"
   ]
 }

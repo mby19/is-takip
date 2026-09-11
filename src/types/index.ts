@@ -58,7 +58,9 @@ export type AuditActionType =
   | "REVERT"
   | "EXPORT"
   | "IMPORT"
-  | "DELETE_FILE";
+  | "DELETE_FILE"
+  | "CLOSE_PERIOD"
+  | "REOPEN_PERIOD";
 
 export interface AuditLog {
   id: number;
