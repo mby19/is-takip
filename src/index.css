@@ -71,12 +71,73 @@
   --color-chart-4: var(--chart-4);
   --color-chart-5: var(--chart-5);
 
+  /* Durum renkleri paletten bağımsızdır: anlam sabit kalmalı. */
+  --color-ok: var(--ok);
+  --color-ok-soft: var(--ok-soft);
+  --color-warn: var(--warn);
+  --color-warn-soft: var(--warn-soft);
+  --color-bad: var(--bad);
+  --color-bad-soft: var(--bad-soft);
+  --color-info: var(--info);
+  --color-info-soft: var(--info-soft);
+
+  /* Yüzey kademeleri — koyu temada kenarlık yerine yükseklikle ayrışmak için. */
+  --color-surface: var(--surface);
+  --color-raised: var(--raised);
+
+  --radius-control: 0.75rem;
+  --radius-card: 1rem;
+  --radius-sheet: 1.5rem;
+
   --z-toast: 9999;
+}
+
+@layer components {
+  /*
+   * Yükseltilmiş yüzey. Koyu temada ton farkı yeterli; açık temada zemin ile
+   * kart arasındaki fark çok ince kaldığı için saç teli kalınlığında bir
+   * çerçeve eklenir.
+   */
+  .surface-raised {
+    background-color: var(--raised);
+  }
+  :root:not(.dark) .surface-raised {
+    box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--border) 75%, transparent);
+  }
 }
 
 @layer base {
   :root {
-    --radius: 0.625rem;
+    --radius: 0.75rem;
+
+    /* Anlamsal durum renkleri — vurgu renginden (primary) ayrıdır. */
+    --ok: hsl(160 62% 34%);
+    --ok-soft: hsl(160 45% 93%);
+    --warn: hsl(35 88% 42%);
+    --warn-soft: hsl(38 85% 93%);
+    --bad: hsl(352 68% 50%);
+    --bad-soft: hsl(352 75% 96%);
+    --info: hsl(202 80% 44%);
+    --info-soft: hsl(202 75% 94%);
+
+    /* Yüzeyler: zemin → yüzey → yükseltilmiş */
+    --surface: var(--card);
+    --raised: var(--card);
+  }
+
+  .dark {
+    /* Koyu temada ayrım kenarlıkla değil yükseklikle yapılır. */
+    --surface: color-mix(in oklab, var(--card) 94%, var(--foreground) 6%);
+    --raised: color-mix(in oklab, var(--card) 86%, var(--foreground) 14%);
+
+    --ok: hsl(158 55% 55%);
+    --ok-soft: hsl(160 35% 15%);
+    --warn: hsl(40 85% 60%);
+    --warn-soft: hsl(38 40% 15%);
+    --bad: hsl(352 70% 62%);
+    --bad-soft: hsl(352 35% 17%);
+    --info: hsl(202 80% 62%);
+    --info-soft: hsl(202 40% 17%);
   }
 
   /* ===================== Ocean (default) ===================== */
@@ -419,6 +480,17 @@
     }
   }
 
+  @keyframes screen-enter {
+    from {
+      opacity: 0;
+      transform: translateY(6px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+
   @keyframes scale-in {
     0% {
       opacity: 0;
@@ -497,6 +569,9 @@
   .animate-slide-up {
     animation: slide-up-reveal 0.4s cubic-bezier(0.16, 1, 0.3, 1) both;
   }
+  .animate-screen-enter {
+    animation: screen-enter 220ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
   .animate-scale-in {
     animation: scale-in 0.3s cubic-bezier(0.16, 1, 0.3, 1) both;
   }
@@ -574,5 +649,16 @@
   }
   .pt-safe {
     padding-top: env(safe-area-inset-top, 0px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
 }

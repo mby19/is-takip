@@ -113,7 +113,7 @@ export function AppLockOverlay({ onUnlock }: AppLockOverlayProps) {
   };
 
   const lockoutNotice = lockedFor > 0 && (
-    <div className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-600 dark:text-rose-400">
+    <div className="flex items-center gap-2 px-4 py-2.5 rounded-control bg-bad-soft border border-rose-500/20 text-bad">
       <Timer className="w-4 h-4 shrink-0" />
       <span className="text-xs font-bold">
         Çok fazla hatalı deneme. {lockedFor} saniye sonra tekrar deneyin.
@@ -134,11 +134,11 @@ export function AppLockOverlay({ onUnlock }: AppLockOverlayProps) {
         {!isRecoveryMode ? (
           <>
             <div className="flex flex-col items-center text-center mt-6 space-y-4">
-              <div className="w-16 h-16 rounded-2xl bg-primary/10 flex items-center justify-center animate-float">
+              <div className="w-16 h-16 rounded-card bg-primary/10 flex items-center justify-center animate-float">
                 <Lock className="w-7 h-7 text-primary" />
               </div>
               <div className="space-y-1">
-                <h2 className="text-xl font-black tracking-tight">Kilitli</h2>
+                <h2 className="text-xl font-semibold tracking-tight">Kilitli</h2>
                 <p className="text-xs text-muted-foreground font-semibold max-w-70">
                   Girmek için 3 resmi sırasıyla seç
                 </p>
@@ -152,7 +152,7 @@ export function AppLockOverlay({ onUnlock }: AppLockOverlayProps) {
                 return (
                   <div
                     key={idx}
-                    className={`w-12 h-12 rounded-xl flex items-center justify-center text-xl font-bold border-2 transition-all duration-300 ${
+                    className={`w-12 h-12 rounded-control flex items-center justify-center text-xl font-bold border-2 transition-all duration-300 ${
                       isShaking
                         ? "border-destructive bg-destructive/10 text-destructive animate-shake"
                         : isSelected
@@ -179,14 +179,14 @@ export function AppLockOverlay({ onUnlock }: AppLockOverlayProps) {
                     onClick={() => void handleEmojiSelect(emoji.id)}
                     disabled={isBlocked || isShaking}
                     aria-label={emoji.name}
-                    className={`aspect-square rounded-2xl border-2 flex flex-col items-center justify-center transition-all duration-200 active:scale-90 disabled:opacity-50 ${
+                    className={`aspect-square rounded-card border-2 flex flex-col items-center justify-center transition-all duration-200 active:scale-90 disabled:opacity-50 ${
                       isPartiallySelected
                         ? "border-amber-500 bg-amber-500/5 shadow-md shadow-amber-500/5 scale-95"
                         : "border-border bg-card/75 hover:border-amber-400/50 hover:bg-amber-400/5"
                     }`}
                   >
                     <span className="text-3xl filter drop-shadow-sm mb-1">{emoji.char}</span>
-                    <span className="text-[10px] font-black uppercase tracking-wider text-muted-foreground/70">
+                    <span className="text-[11px] font-medium text-muted-foreground/70">
                       {emoji.name}
                     </span>
                   </button>
@@ -203,7 +203,7 @@ export function AppLockOverlay({ onUnlock }: AppLockOverlayProps) {
               )}
               <button
                 onClick={() => setIsRecoveryMode(true)}
-                className="text-xs font-black text-primary/80 hover:text-primary transition-colors tracking-wide underline py-2"
+                className="text-[13px] font-medium text-primary/80 hover:text-primary transition-colors tracking-wide underline py-2"
               >
                 Şifremi Unuttum
               </button>
@@ -218,20 +218,18 @@ export function AppLockOverlay({ onUnlock }: AppLockOverlayProps) {
                   setRecoveryPin("");
                 }}
                 aria-label="Geri"
-                className="w-10 h-10 rounded-xl bg-muted/60 flex items-center justify-center active:scale-90 transition-all"
+                className="w-10 h-10 rounded-control bg-muted/60 flex items-center justify-center active:scale-90 transition-all"
               >
                 <ArrowLeft className="w-5 h-5" />
               </button>
             </div>
 
             <div className="flex flex-col items-center text-center mt-2 space-y-4">
-              <div className="w-16 h-16 rounded-2xl bg-rose-500/10 flex items-center justify-center">
-                <ShieldAlert className="w-7 h-7 text-rose-500" />
+              <div className="w-16 h-16 rounded-card bg-bad-soft flex items-center justify-center">
+                <ShieldAlert className="w-7 h-7 text-bad" />
               </div>
               <div className="space-y-1">
-                <h2 className="text-xl font-black tracking-tight text-rose-600 dark:text-rose-400">
-                  Kurtarma Şifresi
-                </h2>
+                <h2 className="text-xl font-semibold tracking-tight text-bad">Kurtarma Şifresi</h2>
                 <p className="text-xs text-muted-foreground font-semibold max-w-70">
                   4 haneli kurtarma şifrenizi girin. Doğru girilirse kilit kaldırılır.
                 </p>
@@ -259,7 +257,7 @@ export function AppLockOverlay({ onUnlock }: AppLockOverlayProps) {
                   key={num}
                   onClick={() => void handlePinKeyPress(num)}
                   disabled={isBlocked || recoveryPin.length >= 4}
-                  className="w-full aspect-square max-h-16 rounded-full bg-muted/40 hover:bg-muted text-lg font-black flex items-center justify-center active:scale-90 transition-all border disabled:opacity-50"
+                  className="w-full aspect-square max-h-16 rounded-full bg-muted/40 hover:bg-muted text-[17px] font-semibold flex items-center justify-center active:scale-90 transition-all border disabled:opacity-50"
                 >
                   {num}
                 </button>
@@ -270,7 +268,7 @@ export function AppLockOverlay({ onUnlock }: AppLockOverlayProps) {
               <button
                 onClick={() => void handlePinKeyPress("0")}
                 disabled={isBlocked || recoveryPin.length >= 4}
-                className="w-full aspect-square max-h-16 rounded-full bg-muted/40 hover:bg-muted text-lg font-black flex items-center justify-center active:scale-90 transition-all border disabled:opacity-50"
+                className="w-full aspect-square max-h-16 rounded-full bg-muted/40 hover:bg-muted text-[17px] font-semibold flex items-center justify-center active:scale-90 transition-all border disabled:opacity-50"
               >
                 0
               </button>
@@ -278,7 +276,7 @@ export function AppLockOverlay({ onUnlock }: AppLockOverlayProps) {
                 onClick={handlePinDelete}
                 disabled={isBlocked || recoveryPin.length === 0}
                 aria-label="Sil"
-                className="w-full aspect-square max-h-16 rounded-full bg-muted/20 hover:bg-muted text-xs font-black flex items-center justify-center active:scale-90 transition-all text-rose-500 disabled:opacity-50"
+                className="w-full aspect-square max-h-16 rounded-full bg-muted/20 hover:bg-muted text-[13px] font-medium flex items-center justify-center active:scale-90 transition-all text-bad disabled:opacity-50"
               >
                 Sil
               </button>

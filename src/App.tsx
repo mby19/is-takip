@@ -179,19 +179,17 @@ function App() {
   if (dbError) {
     return (
       <div className="flex flex-col items-center justify-center h-screen w-screen bg-background p-6 text-center">
-        <div className="w-20 h-20 rounded-3xl bg-rose-100 dark:bg-rose-500/20 flex items-center justify-center mb-6 animate-gentle-bounce">
+        <div className="w-20 h-20 rounded-sheet bg-rose-100 dark:bg-rose-500/20 flex items-center justify-center mb-6 animate-gentle-bounce">
           <span className="text-4xl">⚠️</span>
         </div>
-        <div className="text-rose-600 dark:text-rose-400 font-black text-xl mb-2">
-          Veritabanına Bağlanılamadı
-        </div>
+        <div className="text-bad font-semibold text-xl mb-2">Veritabanına Bağlanılamadı</div>
         <div className="text-muted-foreground font-medium mb-8 max-w-xs text-sm leading-relaxed break-words">
           {dbError}
         </div>
         <Button
           onClick={() => window.location.reload()}
           variant="default"
-          className="rounded-2xl h-14 font-black w-full max-w-xs shadow-lg shadow-primary/20"
+          className="rounded-card h-14 font-semibold w-full max-w-xs shadow-lg shadow-primary/20"
         >
           Yeniden Dene
         </Button>
@@ -202,14 +200,12 @@ function App() {
   if (!dbReady) {
     return (
       <div className="flex flex-col items-center justify-center h-screen w-screen bg-background gap-6">
-        <div className="w-16 h-16 rounded-2xl bg-primary/10 flex items-center justify-center animate-float">
+        <div className="w-16 h-16 rounded-card bg-primary/10 flex items-center justify-center animate-float">
           <ClipboardList className="w-8 h-8 text-primary" />
         </div>
         <div className="text-center space-y-2">
-          <div className="text-primary font-black text-lg tracking-tight">İş Takip</div>
-          <div className="text-muted-foreground text-xs font-medium tracking-widest uppercase">
-            Hazırlanıyor...
-          </div>
+          <div className="text-primary font-semibold text-lg tracking-tight">İş Takip</div>
+          <div className="text-muted-foreground text-xs font-medium  ">Hazırlanıyor...</div>
         </div>
         <div className="w-24 h-1 bg-muted rounded-full overflow-hidden">
           <div className="w-1/2 h-full bg-primary rounded-full animate-[shimmer_1.5s_infinite]" />
@@ -238,7 +234,7 @@ function App() {
                       return (
                         <div
                           key="worker-detail"
-                          className="flex-1 flex flex-col overflow-hidden animate-scale-in"
+                          className="flex-1 flex flex-col overflow-hidden animate-screen-enter"
                         >
                           <WorkerDetailView worker={screen.worker} onBack={goBack} />
                         </div>
@@ -247,7 +243,7 @@ function App() {
                       return (
                         <div
                           key="logs"
-                          className="flex-1 flex flex-col overflow-hidden animate-scale-in"
+                          className="flex-1 flex flex-col overflow-hidden animate-screen-enter"
                         >
                           <AuditLogView onBack={goBack} />
                         </div>
@@ -256,7 +252,7 @@ function App() {
                       return (
                         <div
                           key="settings"
-                          className="flex-1 flex flex-col overflow-hidden animate-scale-in"
+                          className="flex-1 flex flex-col overflow-hidden animate-screen-enter"
                         >
                           <SettingsView
                             onBack={goBack}
@@ -309,14 +305,14 @@ function App() {
                 return (
                   <button
                     key={item.id}
-                    className={`flex flex-col items-center gap-0.5 py-2 px-3.5 rounded-xl transition-all active:scale-90 ${isActive ? "text-primary" : "text-muted-foreground"}`}
+                    className={`flex flex-col items-center gap-0.5 py-2 px-3.5 rounded-control transition-all active:scale-90 ${isActive ? "text-primary" : "text-muted-foreground"}`}
                     onClick={() => switchTab(item.id)}
                     aria-label={item.label}
                     aria-current={isActive ? "page" : undefined}
                   >
                     <Icon className={`w-5 h-5 ${isActive ? "" : "opacity-60"}`} />
                     <span
-                      className={`text-[10px] font-bold uppercase ${isActive ? "opacity-100" : "opacity-60"}`}
+                      className={`text-[10px] font-bold  ${isActive ? "opacity-100" : "opacity-60"}`}
                     >
                       {item.label}
                     </span>

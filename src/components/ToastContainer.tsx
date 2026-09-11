@@ -71,8 +71,8 @@ function ToastItem({
       data-exiting={exiting ? "true" : undefined}
       onClick={dismiss}
       className={`
-        pointer-events-auto flex items-center gap-2.5 px-4 py-3 rounded-2xl shadow-2xl text-sm font-bold cursor-pointer
-        transition-all duration-300 ease-out active:scale-95
+ pointer-events-auto flex items-center gap-2.5 px-4 py-3 rounded-card shadow-2xl text-sm font-bold cursor-pointer
+ transition-all duration-300 ease-out active:scale-95
         ${exiting ? "opacity-0 translate-y-2 scale-95" : "opacity-100 translate-y-0 scale-100"}
         ${
           type === "success"

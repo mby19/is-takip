@@ -26,14 +26,15 @@ interface ThemeStore {
   setPalette: (palette: ThemePalette) => void;
 }
 
+/**
+ * Varsayılan tema koyu.
+ * Uygulama sahada, çoğunlukla düşük ışıkta ve uzun süre açık kalarak
+ * kullanılıyor; cihaz tercihi ne olursa olsun koyu tema ile açılır.
+ * Kullanıcı bir kez seçim yaptıysa o seçim korunur.
+ */
 const getInitialMode = (): "light" | "dark" => {
   const stored = localStorage.getItem("theme-mode");
-  if (stored === "light" || stored === "dark") return stored;
-  // Kullanıcı seçim yapmadıysa cihazın tercihini izle.
-  if (typeof window !== "undefined" && window.matchMedia) {
-    return window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
-  }
-  return "dark";
+  return stored === "light" ? "light" : "dark";
 };
 
 const getInitialPalette = (): ThemePalette => {

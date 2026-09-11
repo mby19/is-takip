@@ -222,17 +222,17 @@ export function BackupSection() {
   return (
     <>
       <div className="space-y-4">
-        <h2 className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-1 flex items-center gap-1.5">
+        <h2 className="text-[11px] font-medium text-muted-foreground ml-1 flex items-center gap-1.5">
           <Database className="w-3.5 h-3.5" /> Veritabanı (Yedekleme)
         </h2>
         <div className="grid grid-cols-2 gap-3">
           <Button
-            className="h-28 rounded-2xl flex flex-col gap-2.5 shadow-lg shadow-primary/20 active:scale-95 transition-all"
+            className="h-28 rounded-card flex flex-col gap-2.5 shadow-lg shadow-primary/20 active:scale-95 transition-all"
             onClick={handleExport}
             disabled={loading}
           >
             <DownloadCloud className="w-7 h-7" />
-            <div className="text-xs font-black text-center leading-tight">
+            <div className="text-[13px] font-medium text-center leading-tight">
               Yedek Al <br />
               <span className="text-[10px] opacity-70 font-bold">(JSON İndir)</span>
             </div>
@@ -240,14 +240,14 @@ export function BackupSection() {
 
           <Button
             variant="outline"
-            className="h-28 rounded-2xl flex flex-col gap-2.5 border-2 hover:bg-rose-50 hover:border-rose-200 hover:text-rose-600 active:scale-95 transition-all group"
+            className="h-28 rounded-card flex flex-col gap-2.5 border-2 hover:bg-rose-50 hover:border-rose-200 hover:text-rose-600 active:scale-95 transition-all group"
             onClick={handleOpenRestoreDialog}
             disabled={loading}
           >
-            <UploadCloud className="w-7 h-7 text-rose-500 group-hover:text-rose-600" />
-            <div className="text-xs font-black text-center leading-tight group-hover:text-rose-600">
+            <UploadCloud className="w-7 h-7 text-bad group-hover:text-rose-600" />
+            <div className="text-[13px] font-medium text-center leading-tight group-hover:text-rose-600">
               Yedekten Dön <br />
-              <span className="text-[10px] text-rose-500/70 font-bold">(Verileri Ezer)</span>
+              <span className="text-[10px] text-bad/70 font-bold">(Verileri Ezer)</span>
             </div>
           </Button>
         </div>
@@ -277,21 +277,19 @@ export function BackupSection() {
           }
         }}
       >
-        <DialogContent className="max-w-md w-[95vw] rounded-3xl p-0 gap-0 border-none shadow-2xl bg-background">
+        <DialogContent className="max-w-md w-[95vw] rounded-sheet p-0 gap-0 border-none shadow-2xl bg-background">
           {confirmRestore ? (
             <div className="p-6 space-y-6">
               <div className="flex flex-col items-center justify-center text-center space-y-3">
-                <div className="w-16 h-16 rounded-full bg-rose-500/10 flex items-center justify-center animate-pulse">
-                  <AlertTriangle className="w-8 h-8 text-rose-500" />
+                <div className="w-16 h-16 rounded-full bg-bad-soft flex items-center justify-center animate-pulse">
+                  <AlertTriangle className="w-8 h-8 text-bad" />
                 </div>
                 <div>
-                  <h3 className="text-base font-black text-rose-600 dark:text-rose-400">
-                    Veritabanı Üzerine Yazılacak
-                  </h3>
+                  <h3 className="text-base font-semibold text-bad">Veritabanı Üzerine Yazılacak</h3>
                   <p className="text-xs text-muted-foreground mt-1 max-w-70 mx-auto leading-relaxed">
                     Aşağıdaki yedekleme dosyası yüklenmek üzere seçildi:
                   </p>
-                  <div className="mt-2.5 px-3 py-2 rounded-xl bg-muted text-[11px] font-mono break-all inline-block font-bold border max-w-full">
+                  <div className="mt-2.5 px-3 py-2 rounded-control bg-muted text-[11px] font-mono break-all inline-block font-bold border max-w-full">
                     {pendingFileName}
                   </div>
                 </div>
@@ -299,7 +297,7 @@ export function BackupSection() {
 
               {/* Dosya doğrulandı — ne yükleneceği önceden gösterilir. */}
               {pendingSummary && (
-                <div className="rounded-xl border bg-card divide-y">
+                <div className="rounded-control border bg-card divide-y">
                   {[
                     {
                       label: "Yedek tarihi",
@@ -318,18 +316,18 @@ export function BackupSection() {
                       className="flex items-center justify-between px-3 py-2 text-[11px]"
                     >
                       <span className="font-bold text-muted-foreground">{row.label}</span>
-                      <span className="font-black font-mono">{row.value}</span>
+                      <span className="font-semibold font-mono">{row.value}</span>
                     </div>
                   ))}
                 </div>
               )}
 
-              <div className="p-4 rounded-xl border-2 border-rose-200 dark:border-rose-500/20 bg-rose-50/50 dark:bg-rose-500/5 space-y-2">
-                <p className="text-[11px] font-bold text-rose-700 dark:text-rose-400 leading-relaxed text-center">
+              <div className="p-4 rounded-control border-2 border-rose-200 dark:border-rose-500/20 bg-rose-50/50 dark:bg-rose-500/5 space-y-2">
+                <p className="text-[11px] font-bold text-bad leading-relaxed text-center">
                   ⚠️ Mevcut tüm çalışan, puantaj, ödeme ve geçmiş kayıtları bu dosyadakilerle
                   değiştirilecek.
                 </p>
-                <p className="text-[11px] font-semibold text-emerald-700 dark:text-emerald-400 leading-relaxed text-center">
+                <p className="text-[11px] font-semibold text-ok leading-relaxed text-center">
                   Silmeden hemen önce mevcut verinizin otomatik bir yedeği İndirilenler klasörüne
                   kaydedilir. İşlem yarıda kalırsa hiçbir şey değişmez.
                 </p>
@@ -337,14 +335,14 @@ export function BackupSection() {
 
               <div className="flex gap-3 pt-2">
                 <button
-                  className="w-1/3 rounded-2xl h-12 font-bold text-muted-foreground bg-muted/60 hover:bg-muted transition-all active:scale-[0.97] text-xs"
+                  className="w-1/3 rounded-card h-12 font-bold text-muted-foreground bg-muted/60 hover:bg-muted transition-all active:scale-[0.97] text-xs"
                   onClick={() => setConfirmRestore(false)}
                   disabled={restoring}
                 >
                   Vazgeç
                 </button>
                 <button
-                  className="w-2/3 rounded-2xl h-12 font-black text-white bg-linear-to-r from-rose-500 to-rose-600 shadow-lg shadow-rose-500/20 hover:from-rose-600 hover:to-rose-700 transition-all active:scale-[0.97] text-xs flex items-center justify-center gap-2"
+                  className="w-2/3 rounded-card h-12 font-semibold text-white bg-bad shadow-sm transition-all active:scale-[0.97] text-xs flex items-center justify-center gap-2"
                   onClick={executeRestore}
                   disabled={restoring}
                 >
@@ -365,24 +363,22 @@ export function BackupSection() {
           ) : confirmDelete ? (
             <div className="p-6 space-y-6">
               <div className="flex flex-col items-center justify-center text-center space-y-3">
-                <div className="w-16 h-16 rounded-full bg-rose-500/10 flex items-center justify-center animate-pulse">
-                  <Trash2 className="w-8 h-8 text-rose-500" />
+                <div className="w-16 h-16 rounded-full bg-bad-soft flex items-center justify-center animate-pulse">
+                  <Trash2 className="w-8 h-8 text-bad" />
                 </div>
                 <div>
-                  <h3 className="text-base font-black text-rose-600 dark:text-rose-400">
-                    Yedekleme Dosyası Silinecek
-                  </h3>
+                  <h3 className="text-base font-semibold text-bad">Yedekleme Dosyası Silinecek</h3>
                   <p className="text-xs text-muted-foreground mt-1 max-w-70 mx-auto leading-relaxed">
                     Aşağıdaki yedekleme dosyası cihazdan kalıcı olarak silinecektir:
                   </p>
-                  <div className="mt-2.5 px-3 py-2 rounded-xl bg-muted text-[10px] font-mono break-all inline-block font-bold border max-w-full">
+                  <div className="mt-2.5 px-3 py-2 rounded-control bg-muted text-[10px] font-mono break-all inline-block font-bold border max-w-full">
                     {pendingDeleteFile}
                   </div>
                 </div>
               </div>
 
-              <div className="p-4 rounded-xl border border-rose-200 dark:border-rose-500/20 bg-rose-50/50 dark:bg-rose-500/5 text-center space-y-2">
-                <p className="text-[10px] font-bold text-rose-700 dark:text-rose-400 leading-relaxed">
+              <div className="p-4 rounded-control border border-rose-200 dark:border-rose-500/20 bg-rose-50/50 dark:bg-rose-500/5 text-center space-y-2">
+                <p className="text-[10px] font-bold text-bad leading-relaxed">
                   ⚠️ DİKKAT: Bu dosya cihazınızdan kalıcı olarak kaldırılacaktır ve geri
                   getirilemez!
                 </p>
@@ -390,10 +386,10 @@ export function BackupSection() {
 
               <div className="space-y-3">
                 <div className="flex flex-col items-center justify-center gap-2">
-                  <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">
+                  <span className="text-[10px] font-bold text-muted-foreground  ">
                     Güvenlik Doğrulama Kodu
                   </span>
-                  <div className="px-4 py-2 rounded-2xl bg-slate-100 dark:bg-slate-800 text-lg font-black tracking-widest text-foreground border select-none">
+                  <div className="px-4 py-2 rounded-card bg-slate-100 dark:bg-slate-800 text-[17px] font-semibold text-foreground border select-none">
                     {deleteChallengeCode}
                   </div>
                 </div>
@@ -401,7 +397,7 @@ export function BackupSection() {
                 <div className="space-y-1.5">
                   <label
                     htmlFor="delete-code-input"
-                    className="text-[10px] font-bold text-muted-foreground uppercase ml-1"
+                    className="text-[10px] font-bold text-muted-foreground  ml-1"
                   >
                     Silmek için yukarıdaki kodu girin
                   </label>
@@ -412,14 +408,14 @@ export function BackupSection() {
                     value={deleteInputCode}
                     onChange={(e) => setDeleteInputCode(e.target.value)}
                     placeholder="Kodu girin..."
-                    className="w-full h-12 px-4 rounded-xl border-2 border-border bg-card text-center text-sm font-black tracking-widest focus:border-rose-500 focus:outline-none transition-all"
+                    className="w-full h-12 px-4 rounded-control border-2 border-border bg-card text-center text-[14px] font-semibold  focus:border-rose-500 focus:outline-none transition-all"
                   />
                 </div>
               </div>
 
               <div className="flex gap-3 pt-2">
                 <button
-                  className="w-1/3 rounded-2xl h-12 font-bold text-muted-foreground bg-muted/60 hover:bg-muted transition-all active:scale-[0.97] text-xs"
+                  className="w-1/3 rounded-card h-12 font-bold text-muted-foreground bg-muted/60 hover:bg-muted transition-all active:scale-[0.97] text-xs"
                   onClick={() => {
                     setConfirmDelete(false);
                     setPendingDeleteFile(null);
@@ -429,9 +425,9 @@ export function BackupSection() {
                   Vazgeç
                 </button>
                 <button
-                  className={`w-2/3 rounded-2xl h-12 font-black text-white transition-all active:scale-[0.97] text-xs flex items-center justify-center gap-2 ${
+                  className={`w-2/3 rounded-card h-12 font-semibold text-white transition-all active:scale-[0.97] text-xs flex items-center justify-center gap-2 ${
                     deleteInputCode === deleteChallengeCode
-                      ? "bg-linear-to-r from-rose-500 to-rose-600 shadow-lg shadow-rose-500/20 hover:from-rose-600 hover:to-rose-700"
+                      ? "bg-bad shadow-sm"
                       : "bg-muted text-muted-foreground cursor-not-allowed shadow-none"
                   }`}
                   onClick={executeDelete}
@@ -454,8 +450,8 @@ export function BackupSection() {
           ) : (
             <>
               <DialogHeader className="px-5 pt-6 pb-3 border-b shrink-0">
-                <DialogTitle className="text-base font-black flex items-center gap-2">
-                  <Database className="w-5 h-5 text-rose-500" />
+                <DialogTitle className="text-base font-semibold flex items-center gap-2">
+                  <Database className="w-5 h-5 text-bad" />
                   Yedekten Geri Yükle
                 </DialogTitle>
                 <DialogDescription className="text-xs text-muted-foreground mt-1">
@@ -465,10 +461,10 @@ export function BackupSection() {
 
               <div className="px-5 py-4 max-h-[50vh] overflow-y-auto">
                 {restoreError && (
-                  <div className="mb-4 p-4 rounded-2xl border-2 border-rose-100 bg-rose-50/50 dark:border-rose-500/20 dark:bg-rose-500/5 text-rose-600 dark:text-rose-400 space-y-2 animate-in fade-in slide-in-from-top-2 duration-200">
+                  <div className="mb-4 p-4 rounded-card border-2 border-rose-100 bg-rose-50/50 dark:border-rose-500/20 dark:bg-rose-500/5 text-bad space-y-2 animate-in fade-in slide-in-from-top-2 duration-200">
                     <div className="flex items-center gap-2">
-                      <AlertTriangle className="w-5 h-5 text-rose-500" />
-                      <span className="text-xs font-black">Yedek Listeleme Hatası</span>
+                      <AlertTriangle className="w-5 h-5 text-bad" />
+                      <span className="text-[13px] font-medium">Yedek Listeleme Hatası</span>
                     </div>
                     <p className="text-[10px] font-bold leading-relaxed">{restoreError}</p>
                   </div>
@@ -481,7 +477,7 @@ export function BackupSection() {
                   </div>
                 ) : backupFiles.length === 0 ? (
                   <div className="flex flex-col items-center justify-center py-10 gap-4 text-center">
-                    <div className="w-16 h-16 rounded-2xl bg-muted/50 flex items-center justify-center">
+                    <div className="w-16 h-16 rounded-card bg-muted/50 flex items-center justify-center">
                       <FileText className="w-8 h-8 text-muted-foreground/40" />
                     </div>
                     <div className="space-y-1">
@@ -497,7 +493,7 @@ export function BackupSection() {
                     <div className="pt-2 w-full px-2">
                       <label
                         htmlFor="manual-backup-file-input"
-                        className="flex items-center justify-center gap-2 h-12 w-full rounded-2xl border-2 border-dashed border-primary/40 hover:border-primary bg-primary/5 hover:bg-primary/10 text-primary font-bold text-xs cursor-pointer transition-all active:scale-[0.98]"
+                        className="flex items-center justify-center gap-2 h-12 w-full rounded-card border-2 border-dashed border-primary/40 hover:border-primary bg-primary/5 hover:bg-primary/10 text-primary font-bold text-xs cursor-pointer transition-all active:scale-[0.98]"
                       >
                         <UploadCloud className="w-4 h-4 text-primary animate-bounce" />
                         Cihazdan Manuel Yedek Seç (.json)
@@ -511,7 +507,7 @@ export function BackupSection() {
                         <button
                           key={file.name}
                           onClick={() => setSelectedFile(file.name)}
-                          className={`w-full p-4 rounded-2xl border-2 text-left transition-all active:scale-[0.98] ${
+                          className={`w-full p-4 rounded-card border-2 text-left transition-all active:scale-[0.98] ${
                             selectedFile === file.name
                               ? "border-primary bg-primary/5 shadow-md shadow-primary/10"
                               : "border-border bg-card hover:border-primary/30 hover:bg-muted/30"
@@ -519,7 +515,7 @@ export function BackupSection() {
                         >
                           <div className="flex items-center gap-3">
                             <div
-                              className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${
+                              className={`w-10 h-10 rounded-control flex items-center justify-center shrink-0 ${
                                 selectedFile === file.name
                                   ? "bg-primary text-white"
                                   : "bg-muted text-muted-foreground"
@@ -529,7 +525,7 @@ export function BackupSection() {
                             </div>
                             <div className="flex-1 min-w-0 flex items-center justify-between gap-2">
                               <div>
-                                <p className="text-sm font-black truncate">
+                                <p className="text-[14px] font-semibold truncate">
                                   {extractDateFromFileName(file.name)}
                                 </p>
                                 <p className="text-[10px] text-muted-foreground font-bold mt-0.5">
@@ -563,7 +559,7 @@ export function BackupSection() {
                                       e.stopPropagation();
                                       handleStartDelete(file.name);
                                     }}
-                                    className="w-9 h-9 rounded-xl bg-rose-50 hover:bg-rose-100 dark:bg-rose-500/10 dark:hover:bg-rose-500/20 text-rose-500 hover:text-rose-600 flex items-center justify-center transition-all active:scale-90"
+                                    className="w-9 h-9 rounded-control bg-rose-50 hover:bg-rose-100 dark:bg-bad-soft dark:hover:bg-rose-500/20 text-bad hover:text-rose-600 flex items-center justify-center transition-all active:scale-90"
                                     title="Yedeği Kalıcı Olarak Sil"
                                   >
                                     <Trash2 className="w-4 h-4" />
@@ -579,7 +575,7 @@ export function BackupSection() {
                     <div className="pt-2 border-t border-dashed">
                       <label
                         htmlFor="manual-backup-file-input"
-                        className="flex items-center justify-center gap-2 h-10 w-full rounded-xl border border-dashed border-muted-foreground/35 hover:border-primary hover:bg-primary/5 text-muted-foreground hover:text-primary font-bold text-[11px] cursor-pointer transition-all active:scale-[0.99]"
+                        className="flex items-center justify-center gap-2 h-10 w-full rounded-control border border-dashed border-muted-foreground/35 hover:border-primary hover:bg-primary/5 text-muted-foreground hover:text-primary font-bold text-[11px] cursor-pointer transition-all active:scale-[0.99]"
                       >
                         <UploadCloud className="w-3.5 h-3.5" />
                         Cihazdan Farklı Bir Yedek Seç (.json)
@@ -591,21 +587,21 @@ export function BackupSection() {
 
               {backupFiles.length > 0 && (
                 <div className="px-5 pb-5 pt-2 border-t space-y-3">
-                  <div className="flex items-start gap-2 p-3 rounded-xl bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/20">
-                    <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
-                    <p className="text-[10px] font-bold text-amber-700 dark:text-amber-400 leading-relaxed">
+                  <div className="flex items-start gap-2 p-3 rounded-control bg-warn-soft border border-amber-200 dark:border-amber-500/20">
+                    <AlertTriangle className="w-4 h-4 text-warn shrink-0 mt-0.5" />
+                    <p className="text-[10px] font-bold text-warn leading-relaxed">
                       Bu işlem mevcut tüm verileri siler ve seçilen yedeği yükler. Geri alınamaz!
                     </p>
                   </div>
                   <div className="flex gap-3">
                     <button
-                      className="w-1/3 rounded-2xl h-12 font-bold text-muted-foreground bg-muted/50 hover:bg-muted transition-all active:scale-[0.97] text-sm"
+                      className="w-1/3 rounded-card h-12 font-bold text-muted-foreground bg-muted/50 hover:bg-muted transition-all active:scale-[0.97] text-sm"
                       onClick={() => setIsRestoreOpen(false)}
                     >
                       İptal
                     </button>
                     <button
-                      className={`w-2/3 rounded-2xl h-12 font-black text-white shadow-lg transition-all active:scale-[0.97] text-sm flex items-center justify-center gap-2 ${
+                      className={`w-2/3 rounded-card h-12 font-semibold text-white shadow-lg transition-all active:scale-[0.97] text-sm flex items-center justify-center gap-2 ${
                         selectedFile
                           ? "bg-linear-to-r from-rose-500 to-rose-600 shadow-rose-500/20"
                           : "bg-muted text-muted-foreground cursor-not-allowed shadow-none"

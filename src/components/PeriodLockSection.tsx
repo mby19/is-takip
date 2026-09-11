@@ -53,7 +53,7 @@ export function PeriodLockSection() {
 
   return (
     <div className="space-y-4">
-      <h2 className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-1 flex items-center gap-1.5">
+      <h2 className="text-[11px] font-medium text-muted-foreground ml-1 flex items-center gap-1.5">
         <CalendarCheck className="w-3.5 h-3.5" /> Dönem Kilidi
       </h2>
 
@@ -63,7 +63,7 @@ export function PeriodLockSection() {
         Sistem Geçmişi'ne kaydedilir.
       </p>
 
-      <div className="rounded-2xl border bg-card divide-y overflow-hidden">
+      <div className="rounded-card border bg-card divide-y overflow-hidden">
         {isLoading && periods.length === 0 && (
           <div className="flex items-center justify-center py-8">
             <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
@@ -80,14 +80,14 @@ export function PeriodLockSection() {
                 <div className="flex items-center gap-2">
                   <span className="text-sm font-bold capitalize">{formatPeriod(period)}</span>
                   {isCurrent && (
-                    <span className="text-[10px] font-black uppercase tracking-wider text-primary bg-primary/10 px-1.5 py-0.5 rounded">
+                    <span className="text-[11px] font-medium text-primary bg-primary/10 px-1.5 py-0.5 rounded">
                       İçinde
                     </span>
                   )}
                 </div>
                 <div
                   className={`text-[11px] font-bold ${
-                    locked ? "text-sky-600 dark:text-sky-400" : "text-muted-foreground"
+                    locked ? "text-info" : "text-muted-foreground"
                   }`}
                 >
                   {locked ? "Kapalı — salt okunur" : "Açık — değiştirilebilir"}
@@ -97,7 +97,7 @@ export function PeriodLockSection() {
               <button
                 onClick={() => setPending({ period, action: locked ? "reopen" : "close" })}
                 aria-label={`${formatPeriod(period)} dönemini ${locked ? "aç" : "kapat"}`}
-                className={`shrink-0 h-9 px-3 rounded-xl border text-[11px] font-black uppercase tracking-wider flex items-center gap-1.5 transition-all active:scale-95 ${
+                className={`shrink-0 h-9 px-3 rounded-control border text-[11px] font-medium flex items-center gap-1.5 transition-all active:scale-95 ${
                   locked
                     ? "bg-sky-500 text-white border-sky-500 shadow-sm shadow-sky-500/20"
                     : "bg-transparent text-muted-foreground border-border hover:bg-muted"
@@ -114,29 +114,29 @@ export function PeriodLockSection() {
       {periodsSince(earliest).length > 6 && (
         <button
           onClick={() => setShowAll((v) => !v)}
-          className="w-full h-10 rounded-xl border text-[11px] font-black uppercase tracking-wider text-muted-foreground hover:bg-muted transition-colors"
+          className="w-full h-10 rounded-control border text-[11px] font-medium text-muted-foreground hover:bg-muted transition-colors"
         >
           {showAll ? "Daha az göster" : "Tüm dönemleri göster"}
         </button>
       )}
 
       <Dialog open={!!pending} onOpenChange={(open) => !open && setPending(null)}>
-        <DialogContent className="w-[90%] max-w-sm rounded-3xl p-6 border-none shadow-2xl">
+        <DialogContent className="w-[90%] max-w-sm rounded-sheet p-6 border-none shadow-2xl">
           <DialogHeader className="mb-2">
-            <DialogTitle className="text-lg font-black">
+            <DialogTitle className="text-[17px] font-semibold">
               {pending?.action === "close" ? "Dönemi Kapat" : "Dönemi Yeniden Aç"}
             </DialogTitle>
           </DialogHeader>
 
           {pending?.action === "close" ? (
             <p className="text-sm text-muted-foreground font-medium py-2 leading-relaxed">
-              <span className="font-black text-foreground">{formatPeriod(pending.period)}</span>{" "}
+              <span className="font-semibold text-foreground">{formatPeriod(pending.period)}</span>{" "}
               dönemi kapatılacak. Bu aya ait puantaj, üretim, ciro ve ödeme kayıtları değiştirilemez
               hale gelir. İstediğiniz zaman buradan tekrar açabilirsiniz.
             </p>
           ) : (
             <p className="text-sm text-muted-foreground font-medium py-2 leading-relaxed">
-              <span className="font-black text-foreground">
+              <span className="font-semibold text-foreground">
                 {pending ? formatPeriod(pending.period) : ""}
               </span>{" "}
               dönemi yeniden açılacak ve düzenlenebilir hale gelecek. Ödemesi yapılmış bir dönemde
@@ -146,14 +146,14 @@ export function PeriodLockSection() {
 
           <div className="flex gap-3 mt-4">
             <button
-              className="flex-1 h-12 rounded-xl border font-bold text-xs hover:bg-muted disabled:opacity-50"
+              className="flex-1 h-12 rounded-control border font-bold text-xs hover:bg-muted disabled:opacity-50"
               onClick={() => setPending(null)}
               disabled={busy}
             >
               Vazgeç
             </button>
             <button
-              className={`flex-1 h-12 rounded-xl text-white font-bold text-xs shadow-md disabled:opacity-60 ${
+              className={`flex-1 h-12 rounded-control text-white font-bold text-xs shadow-md disabled:opacity-60 ${
                 pending?.action === "close"
                   ? "bg-sky-500 shadow-sky-500/20"
                   : "bg-amber-500 shadow-amber-500/20"

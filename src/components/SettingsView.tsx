@@ -43,31 +43,27 @@ export function SettingsView({
       <header className="pt-safe-header pb-4 px-5 border-b bg-card shrink-0 flex items-center gap-3">
         <button
           onClick={onBack}
-          className="w-10 h-10 rounded-xl bg-muted/60 flex items-center justify-center active:scale-90 transition-all shrink-0"
+          className="w-10 h-10 rounded-control bg-muted/60 flex items-center justify-center active:scale-90 transition-all shrink-0"
         >
           <ArrowLeft className="w-5 h-5" />
         </button>
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-slate-500/10 flex items-center justify-center">
+          <div className="w-10 h-10 rounded-control bg-slate-500/10 flex items-center justify-center">
             <Settings className="w-5 h-5 text-slate-500" />
           </div>
           <div>
-            <h1 className="text-lg font-black tracking-tight">Ayarlar</h1>
-            <p className="text-[10px] font-bold text-muted-foreground tracking-wider uppercase">
-              Sistem & Yönetim
-            </p>
+            <h1 className="text-lg font-semibold tracking-tight">Ayarlar</h1>
+            <p className="text-[10px] font-bold text-muted-foreground  ">Sistem & Yönetim</p>
           </div>
         </div>
       </header>
 
-      <div className="flex-1 overflow-y-auto p-5 space-y-8 pb-safe-content stagger-children">
+      <div className="flex-1 overflow-y-auto p-5 space-y-8 pb-safe-content">
         {triggerError && (
-          <div className="p-4 rounded-2xl border-2 border-amber-300 dark:border-amber-500/40 bg-amber-50 dark:bg-amber-500/10 flex gap-3">
-            <AlertTriangle className="w-5 h-5 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+          <div className="p-4 rounded-card border-2 border-amber-300 dark:border-amber-500/40 bg-warn-soft flex gap-3">
+            <AlertTriangle className="w-5 h-5 text-warn shrink-0 mt-0.5" />
             <div className="min-w-0">
-              <h3 className="text-xs font-black text-amber-700 dark:text-amber-400">
-                Denetim kaydı devre dışı
-              </h3>
+              <h3 className="text-[13px] font-medium text-warn">Denetim kaydı devre dışı</h3>
               <p className="text-[11px] font-medium text-amber-700/80 dark:text-amber-300/80 mt-1 leading-relaxed">
                 Değişiklik kayıtları tutulamıyor, bu yüzden «Geri Al» özelliği güvenilir değil.
                 Uygulamayı yeniden başlatmayı deneyin.
@@ -79,7 +75,7 @@ export function SettingsView({
           </div>
         )}
         <div className="space-y-4">
-          <h2 className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-1 flex items-center gap-1.5">
+          <h2 className="text-[11px] font-medium text-muted-foreground ml-1 flex items-center gap-1.5">
             <Palette className="w-3.5 h-3.5" /> Görünüm & Arayüz
           </h2>
 
@@ -93,7 +89,7 @@ export function SettingsView({
                 <button
                   key={p.id}
                   onClick={() => setPalette(p.id)}
-                  className={`flex flex-col items-center gap-1.5 p-2 rounded-xl border-2 transition-all active:scale-95 ${
+                  className={`flex flex-col items-center gap-1.5 p-2 rounded-control border-2 transition-all active:scale-95 ${
                     isActive
                       ? "border-primary bg-primary/5 shadow-sm"
                       : "border-transparent hover:border-border hover:bg-muted/30"
@@ -116,7 +112,7 @@ export function SettingsView({
                     />
                   </div>
                   <span
-                    className={`text-[10px] font-black uppercase tracking-wider ${
+                    className={`text-[11px] font-medium ${
                       isActive ? "text-primary" : "text-muted-foreground"
                     }`}
                   >
@@ -128,20 +124,20 @@ export function SettingsView({
           </div>
 
           {/* Açık / Koyu / Sistem toggle */}
-          <div className="p-1.5 rounded-2xl border-2 bg-card flex items-center shadow-sm">
+          <div className="p-1.5 rounded-card border-2 bg-card flex items-center shadow-sm">
             <button
               onClick={() => themeMode === "dark" && toggleMode()}
-              className={`flex-1 h-12 rounded-xl flex items-center justify-center gap-2 font-bold text-xs transition-all ${
+              className={`flex-1 h-12 rounded-control flex items-center justify-center gap-2 font-bold text-xs transition-all ${
                 themeMode === "light"
                   ? "bg-background shadow-md border text-foreground"
                   : "text-muted-foreground hover:text-foreground"
               }`}
             >
-              <Sun className={`w-4 h-4 ${themeMode === "light" ? "text-amber-500" : ""}`} /> Açık
+              <Sun className={`w-4 h-4 ${themeMode === "light" ? "text-warn" : ""}`} /> Açık
             </button>
             <button
               onClick={() => themeMode === "light" && toggleMode()}
-              className={`flex-1 h-12 rounded-xl flex items-center justify-center gap-2 font-bold text-xs transition-all ${
+              className={`flex-1 h-12 rounded-control flex items-center justify-center gap-2 font-bold text-xs transition-all ${
                 themeMode === "dark"
                   ? "bg-background shadow-md border text-foreground"
                   : "text-muted-foreground hover:text-foreground"
@@ -154,17 +150,17 @@ export function SettingsView({
 
         {/* Sistem */}
         <div className="space-y-4">
-          <h2 className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-1 flex items-center gap-1.5">
+          <h2 className="text-[11px] font-medium text-muted-foreground ml-1 flex items-center gap-1.5">
             <Settings className="w-3.5 h-3.5" /> Sistem
           </h2>
           <Button
             variant="outline"
-            className="w-full h-18 rounded-2xl justify-start px-5 font-bold gap-4 border-2 hover:border-primary/50 hover:bg-primary/5 transition-all"
+            className="w-full h-18 rounded-card justify-start px-5 font-bold gap-4 border-2 hover:border-primary/50 hover:bg-primary/5 transition-all"
             onClick={onNavigateLogs}
           >
             <History className="w-7 h-7 text-primary" />
             <div className="text-left">
-              <div className="text-sm font-black">Sistem Geçmişi</div>
+              <div className="text-[14px] font-semibold">Sistem Geçmişi</div>
               <div className="text-[10px] text-muted-foreground font-bold tracking-wide mt-0.5">
                 Tüm değişiklikler, geri alma dahil
               </div>
@@ -180,14 +176,14 @@ export function SettingsView({
 
         <div className="space-y-4 pt-6 border-t border-dashed">
           <div className="flex flex-col items-center justify-center gap-2 opacity-60">
-            <div className="w-12 h-12 rounded-2xl bg-muted flex items-center justify-center">
+            <div className="w-12 h-12 rounded-card bg-muted flex items-center justify-center">
               <Smartphone className="w-6 h-6" />
             </div>
             <div className="text-center">
-              <h3 className="text-xs font-black tracking-widest uppercase">İş Takip Mobile</h3>
+              <h3 className="text-[13px] font-medium  ">İş Takip Mobile</h3>
               <p className="text-[10px] font-bold mt-0.5">Versiyon {APP_VERSION}</p>
             </div>
-            <p className="text-[10px] mt-2 font-bold uppercase tracking-widest">
+            <p className="text-[10px] mt-2 font-bold  ">
               © {new Date().getFullYear()} Tüm Hakları Saklıdır.
             </p>
           </div>

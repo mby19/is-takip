@@ -67,7 +67,7 @@ describe("DayDetailSheet", () => {
 
   it("resmî tatil anahtarı vardır ve durumu aria-pressed ile bildirir", async () => {
     renderSheet();
-    const toggle = screen.getByRole("button", { name: /Resmî Tatil/i });
+    const toggle = screen.getByRole("button", { name: "Tatil" });
     expect(toggle).toHaveAttribute("aria-pressed", "false");
     await click(toggle);
     expect(toggle).toHaveAttribute("aria-pressed", "true");
@@ -84,13 +84,13 @@ describe("DayDetailSheet", () => {
     );
   });
 
-  it("«Dünü Kopyala» düğmesi önceki günün puantajını forma doldurur", async () => {
+  it("«Dünü kopyala» düğmesi önceki günün puantajını forma doldurur", async () => {
     useAttendanceStore.setState({
       attendances: [{ id: 1, worker_id: 1, date: "2026-05-09", status: "FULL" }],
     });
     renderSheet();
 
-    await click(screen.getByRole("button", { name: /Dünü Kopyala/i }));
+    await click(screen.getByRole("button", { name: /Dünü kopyala/i }));
     expect(screen.getByRole("button", { name: "Ahmet Yılmaz: Tam" })).toHaveAttribute(
       "aria-pressed",
       "true",

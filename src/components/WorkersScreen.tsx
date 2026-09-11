@@ -26,6 +26,7 @@ import {
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
 import type { Worker } from "../types";
+import { WorkerAvatar } from "./ui/worker-avatar";
 
 interface WorkersScreenProps {
   onWorkerClick: (worker: Worker) => void;
@@ -45,15 +46,15 @@ export function WorkersScreen({ onWorkerClick }: WorkersScreenProps) {
   const archivedWorkers = workers.filter((w) => w.is_active === false);
 
   return (
-    <div className="flex flex-col h-full overflow-hidden animate-scale-in">
+    <div className="flex flex-col h-full overflow-hidden animate-screen-enter">
       <header className="pt-safe-header pb-4 px-5 bg-card border-b shrink-0 flex justify-between items-center">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center">
+          <div className="w-10 h-10 rounded-control bg-primary/10 flex items-center justify-center">
             <Users className="w-5 h-5 text-primary" />
           </div>
           <div>
-            <h1 className="text-lg font-black tracking-tight">Ekip</h1>
-            <p className="text-[10px] font-bold text-muted-foreground tracking-wider uppercase">
+            <h1 className="text-lg font-semibold tracking-tight">Ekip</h1>
+            <p className="text-[10px] font-bold text-muted-foreground  ">
               {activeWorkers.length} kişi aktif
             </p>
           </div>
@@ -62,7 +63,7 @@ export function WorkersScreen({ onWorkerClick }: WorkersScreenProps) {
           <SpinWheelDialog />
           <button
             onClick={toggleMode}
-            className="w-10 h-10 rounded-xl bg-muted/40 hover:bg-muted flex items-center justify-center transition-all active:scale-95"
+            className="w-10 h-10 rounded-control bg-muted/40 hover:bg-muted flex items-center justify-center transition-all active:scale-95"
           >
             {mode === "dark" ? (
               <Sun className="w-5 h-5 text-amber-400" />
@@ -74,7 +75,7 @@ export function WorkersScreen({ onWorkerClick }: WorkersScreenProps) {
       </header>
       <div className="flex-1 overflow-y-auto no-scrollbar p-4 space-y-2.5 pb-safe-content">
         {workerError && (
-          <div className="p-4 rounded-2xl bg-rose-50 dark:bg-rose-500/10 border border-rose-100 dark:border-rose-500/20 text-rose-600 dark:text-rose-400 text-xs font-bold animate-slide-up">
+          <div className="p-4 rounded-card bg-bad-soft border border-rose-100 dark:border-rose-500/20 text-bad text-xs font-bold animate-slide-up">
             Hata: {workerError}
           </div>
         )}
@@ -86,40 +87,25 @@ export function WorkersScreen({ onWorkerClick }: WorkersScreenProps) {
         )}
 
         {/* Aktif Çalışanlar */}
-        <div className="stagger-children space-y-3">
+        <div className="space-y-3">
           {activeWorkers.map((w: Worker) => (
             <div
               key={w.id}
               onClick={() => onWorkerClick(w)}
-              className="p-3.5 rounded-xl border bg-card flex justify-between items-center active:scale-[0.98] transition-all cursor-pointer group"
+              className="p-3 rounded-card surface-raised flex justify-between items-center gap-3 active:scale-[0.98] transition-all cursor-pointer"
             >
-              <div className="flex items-center gap-3">
-                <div
-                  className={`w-9 h-9 rounded-lg flex items-center justify-center font-bold text-sm transition-transform group-active:scale-90 ${w.worker_type === "ORTAK" ? "bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-400" : "bg-blue-100 text-blue-700 dark:bg-blue-500/20 dark:text-blue-400"}`}
-                >
-                  {w.worker_type === "ORTAK" ? (
-                    <Handshake className="w-4 h-4" />
-                  ) : (
-                    <Wallet className="w-4 h-4" />
-                  )}
-                </div>
-                <div>
-                  <p className="font-bold text-sm tracking-tight">{w.name}</p>
-                  <p
-                    className={`text-[10px] uppercase tracking-wider font-bold ${w.worker_type === "ORTAK" ? "text-amber-600 dark:text-amber-500" : "text-primary"}`}
-                  >
+              <div className="flex items-center gap-3 min-w-0">
+                <WorkerAvatar name={w.name} type={w.worker_type} />
+                <div className="min-w-0">
+                  <p className="text-[14px] font-medium tracking-tight truncate">{w.name}</p>
+                  <p className="text-[11px] text-muted-foreground">
                     {w.worker_type === "ORTAK" ? "Ortak" : "Yevmiyeli"}
                   </p>
                 </div>
               </div>
               {w.worker_type === "GUNLUK" && (
-                <div className="text-right">
-                  <div className="text-primary font-black text-lg font-mono tracking-tight">
-                    ₺{w.daily_wage}
-                  </div>
-                  <div className="text-[10px] uppercase text-muted-foreground font-bold tracking-widest">
-                    Yevmiye
-                  </div>
+                <div className="text-[15px] font-semibold tabular-nums text-primary">
+                  ₺{w.daily_wage.toLocaleString("tr-TR")}
                 </div>
               )}
             </div>
@@ -131,11 +117,11 @@ export function WorkersScreen({ onWorkerClick }: WorkersScreenProps) {
           <div className="mt-6 space-y-2">
             <button
               onClick={() => setShowArchived(!showArchived)}
-              className="w-full flex items-center justify-between px-4 py-3 rounded-xl bg-muted/30 border border-border hover:bg-muted/50 transition-all active:scale-[0.99]"
+              className="w-full flex items-center justify-between px-4 py-3 rounded-control bg-muted/30 border border-border hover:bg-muted/50 transition-all active:scale-[0.99]"
             >
               <div className="flex items-center gap-2">
                 <Archive className="w-4 h-4 text-muted-foreground" />
-                <span className="text-xs font-black text-muted-foreground uppercase tracking-wider">
+                <span className="text-[13px] font-medium text-muted-foreground  ">
                   Arşivlenmiş ({archivedWorkers.length})
                 </span>
               </div>
@@ -151,7 +137,7 @@ export function WorkersScreen({ onWorkerClick }: WorkersScreenProps) {
                 {archivedWorkers.map((w: Worker) => (
                   <div
                     key={w.id}
-                    className="p-3.5 rounded-xl border border-dashed bg-muted/20 flex justify-between items-center opacity-70 hover:opacity-100 transition-opacity"
+                    className="p-3.5 rounded-control border border-dashed bg-muted/20 flex justify-between items-center opacity-70 hover:opacity-100 transition-opacity"
                   >
                     <div className="flex items-center gap-3">
                       <div className="w-9 h-9 rounded-lg flex items-center justify-center bg-muted text-muted-foreground">
@@ -161,7 +147,7 @@ export function WorkersScreen({ onWorkerClick }: WorkersScreenProps) {
                         <p className="font-bold text-sm tracking-tight text-muted-foreground">
                           {w.name}
                         </p>
-                        <p className="text-[10px] uppercase tracking-wider font-bold text-muted-foreground/60">
+                        <p className="text-[10px] font-bold text-muted-foreground/60">
                           {w.worker_type === "ORTAK" ? "Ortak" : "Yevmiyeli"}
                         </p>
                       </div>
@@ -171,7 +157,7 @@ export function WorkersScreen({ onWorkerClick }: WorkersScreenProps) {
                         e.stopPropagation();
                         updateWorkerStatus(w.id, true);
                       }}
-                      className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-primary/10 hover:bg-primary/20 text-primary font-bold text-[10px] uppercase tracking-wider transition-all active:scale-95"
+                      className="flex items-center gap-1.5 px-3 py-2 rounded-control bg-primary/10 hover:bg-primary/20 text-primary font-bold text-[10px] transition-all active:scale-95"
                       title="Tekrar Aktif Et"
                     >
                       <RotateCcw className="w-3.5 h-3.5" />
@@ -205,38 +191,33 @@ function AddWorkerDialog({
       <DialogTrigger asChild>
         <Button
           variant="outline"
-          className="w-full rounded-2xl border-dashed border-2 h-16 text-base font-bold gap-2 hover:bg-primary/5 hover:border-primary/30 hover:text-primary transition-all duration-300 active:scale-95"
+          className="w-full rounded-card border-dashed border-2 h-16 text-base font-bold gap-2 hover:bg-primary/5 hover:border-primary/30 hover:text-primary transition-all duration-300 active:scale-95"
         >
           <UserPlus className="w-5 h-5" /> Yeni Kişi Ekle
         </Button>
       </DialogTrigger>
-      <DialogContent className="rounded-3xl border-none shadow-2xl">
+      <DialogContent className="rounded-sheet border-none shadow-2xl">
         <DialogHeader>
-          <DialogTitle className="text-xl font-black">Yeni Kişi Ekle</DialogTitle>
+          <DialogTitle className="text-xl font-semibold">Yeni Kişi Ekle</DialogTitle>
         </DialogHeader>
         <div className="space-y-5 py-4">
           <div className="space-y-2">
-            <Label
-              htmlFor="name"
-              className="text-xs font-black uppercase tracking-widest opacity-60"
-            >
+            <Label htmlFor="name" className="text-[13px] font-medium   opacity-60">
               İsim Soyisim
             </Label>
             <Input
               id="name"
               placeholder="Örn: Ahmet Yılmaz"
-              className="h-13 rounded-xl border-2 border-transparent bg-muted/50 font-bold text-base focus:border-primary focus:bg-background transition-all"
+              className="h-13 rounded-control border-2 border-transparent bg-muted/50 font-bold text-base focus:border-primary focus:bg-background transition-all"
               value={name}
               onChange={(e: React.ChangeEvent<HTMLInputElement>) => setName(e.target.value)}
             />
           </div>
           <div className="space-y-2">
-            <Label className="text-xs font-black uppercase tracking-widest opacity-60">
-              Çalışan Türü
-            </Label>
+            <Label className="text-[13px] font-medium   opacity-60">Çalışan Türü</Label>
             <div className="flex gap-3">
               <button
-                className={`flex-1 p-4 rounded-xl border-2 transition-all duration-300 flex flex-col items-center gap-2 active:scale-95 ${
+                className={`flex-1 p-4 rounded-control border-2 transition-all duration-300 flex flex-col items-center gap-2 active:scale-95 ${
                   type === "GUNLUK"
                     ? "border-blue-500 bg-blue-50 shadow-md shadow-blue-500/10"
                     : "border-muted bg-muted/30 hover:border-muted-foreground/20"
@@ -247,13 +228,13 @@ function AddWorkerDialog({
                   className={`w-6 h-6 ${type === "GUNLUK" ? "text-blue-600" : "text-muted-foreground"}`}
                 />
                 <span
-                  className={`text-xs font-black uppercase ${type === "GUNLUK" ? "text-blue-600" : "text-muted-foreground"}`}
+                  className={`text-[13px] font-medium  ${type === "GUNLUK" ? "text-blue-600" : "text-muted-foreground"}`}
                 >
                   Yevmiyeli
                 </span>
               </button>
               <button
-                className={`flex-1 p-4 rounded-xl border-2 transition-all duration-300 flex flex-col items-center gap-2 active:scale-95 ${
+                className={`flex-1 p-4 rounded-control border-2 transition-all duration-300 flex flex-col items-center gap-2 active:scale-95 ${
                   type === "ORTAK"
                     ? "border-amber-500 bg-amber-50 shadow-md shadow-amber-500/10"
                     : "border-muted bg-muted/30 hover:border-muted-foreground/20"
@@ -264,7 +245,7 @@ function AddWorkerDialog({
                   className={`w-6 h-6 ${type === "ORTAK" ? "text-amber-600" : "text-muted-foreground"}`}
                 />
                 <span
-                  className={`text-xs font-black uppercase ${type === "ORTAK" ? "text-amber-600" : "text-muted-foreground"}`}
+                  className={`text-[13px] font-medium  ${type === "ORTAK" ? "text-amber-600" : "text-muted-foreground"}`}
                 >
                   Ortak
                 </span>
@@ -273,16 +254,13 @@ function AddWorkerDialog({
           </div>
           {type === "GUNLUK" && (
             <div className="space-y-2 animate-slide-up">
-              <Label
-                htmlFor="wage"
-                className="text-xs font-black uppercase tracking-widest opacity-60"
-              >
+              <Label htmlFor="wage" className="text-[13px] font-medium   opacity-60">
                 Günlük Yevmiye (₺)
               </Label>
               <Input
                 id="wage"
                 type="number"
-                className="h-13 rounded-xl border-2 border-transparent bg-muted/50 font-bold text-base focus:border-primary focus:bg-background transition-all"
+                className="h-13 rounded-control border-2 border-transparent bg-muted/50 font-bold text-base focus:border-primary focus:bg-background transition-all"
                 value={wage}
                 onChange={(e: React.ChangeEvent<HTMLInputElement>) => setWage(e.target.value)}
               />
@@ -301,7 +279,7 @@ function AddWorkerDialog({
               setWage("600");
             }}
             disabled={!name.trim() || (type === "GUNLUK" && (!wage || parseFloat(wage) <= 0))}
-            className="w-full h-13 rounded-2xl font-black shadow-lg shadow-primary/20 transition-all active:scale-95"
+            className="w-full h-13 rounded-card font-semibold shadow-lg shadow-primary/20 transition-all active:scale-95"
           >
             Kaydet
           </Button>

@@ -1,16 +1,17 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from "react";
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from "./ui/sheet";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "./ui/dialog";
+import { WorkerAvatar } from "./ui/worker-avatar";
 import {
-  CheckCircle2,
-  XCircle,
-  MinusCircle,
-  ReceiptText,
-  Wallet,
+  Check,
+  X,
+  Minus,
   Palmtree,
   CopyPlus,
   Eraser,
   Archive,
   Lock,
+  CheckCheck,
 } from "lucide-react";
 import { useWorkerStore } from "../stores/workerStore";
 import { useAttendanceStore } from "../stores/attendanceStore";
@@ -33,42 +34,20 @@ interface DayDetailSheetProps {
 
 type EditMap = Record<number, AttendanceStatus | null>;
 
-const STATUS_BUTTONS: {
+/** Dört durum tek bir segment denetiminde toplanır — dört ayrı çerçeve yerine. */
+const SEGMENTS: {
   status: AttendanceStatus;
   label: string;
-  icon: typeof CheckCircle2;
-  activeClass: string;
-  idleClass: string;
+  icon: typeof Check;
+  active: string;
 }[] = [
-  {
-    status: "FULL",
-    label: "Tam",
-    icon: CheckCircle2,
-    activeClass: "bg-emerald-500 text-white border-emerald-500 shadow-md shadow-emerald-500/20",
-    idleClass: "bg-transparent text-emerald-600 border-emerald-200 hover:bg-emerald-50",
-  },
-  {
-    status: "HALF",
-    label: "Yarım",
-    icon: MinusCircle,
-    activeClass: "bg-amber-500 text-white border-amber-500 shadow-md shadow-amber-500/20",
-    idleClass: "bg-transparent text-amber-600 border-amber-200 hover:bg-amber-50",
-  },
-  {
-    status: "ABSENT",
-    label: "Yok",
-    icon: XCircle,
-    activeClass: "bg-rose-500 text-white border-rose-500 shadow-md shadow-rose-500/20",
-    idleClass: "bg-transparent text-rose-600 border-rose-200 hover:bg-rose-50",
-  },
-  {
-    status: "HOLIDAY",
-    label: "İzin",
-    icon: Palmtree,
-    activeClass: "bg-sky-500 text-white border-sky-500 shadow-md shadow-sky-500/20",
-    idleClass: "bg-transparent text-sky-600 border-sky-200 hover:bg-sky-50",
-  },
+  { status: "FULL", label: "Tam", icon: Check, active: "bg-ok text-white" },
+  { status: "HALF", label: "Yarım", icon: Minus, active: "bg-warn text-white" },
+  { status: "ABSENT", label: "Yok", icon: X, active: "bg-bad text-white" },
+  { status: "HOLIDAY", label: "İzin", icon: Palmtree, active: "bg-info text-white" },
 ];
+
+const money = (n: number) => `₺${Math.round(n).toLocaleString("tr-TR")}`;
 
 export function DayDetailSheet({ isOpen, onClose, dateStr }: DayDetailSheetProps) {
   const allWorkers = useWorkerStore((s) => s.workers);
@@ -80,11 +59,10 @@ export function DayDetailSheet({ isOpen, onClose, dateStr }: DayDetailSheetProps
   const updateMetrics = useMetricsStore((s) => s.updateMetrics);
   const metricsLoading = useMetricsStore((s) => s.isLoading);
   const addToast = useToastStore((s) => s.addToast);
+  const closedPeriods = usePeriodStore((s) => s.closed);
 
   const isLoading = attLoading || metricsLoading;
 
-  // Dönem kapatılmışsa gün salt okunur olur.
-  const closedPeriods = usePeriodStore((s) => s.closed);
   const isClosed = useMemo(
     () => (dateStr ? closedPeriods.some((c) => c.period === periodOf(dateStr)) : false),
     [closedPeriods, dateStr],
@@ -111,10 +89,10 @@ export function DayDetailSheet({ isOpen, onClose, dateStr }: DayDetailSheetProps
     [displayWorkers, archivedWithData],
   );
 
-  const [production, setProduction] = useState<number>(0);
-  const [totalEarned, setTotalEarned] = useState<number>(0);
-  const [extraExpenses, setExtraExpenses] = useState<number>(0);
-  const [isHoliday, setIsHoliday] = useState<boolean>(false);
+  const [production, setProduction] = useState(0);
+  const [totalEarned, setTotalEarned] = useState(0);
+  const [extraExpenses, setExtraExpenses] = useState(0);
+  const [isHoliday, setIsHoliday] = useState(false);
   const [edits, setEdits] = useState<EditMap>({});
   const [isSaving, setIsSaving] = useState(false);
   const [isDirty, setIsDirty] = useState(false);
@@ -131,10 +109,9 @@ export function DayDetailSheet({ isOpen, onClose, dateStr }: DayDetailSheetProps
     setIsHoliday(Boolean(dayMetric?.is_holiday));
   }, [metrics, dateStr]);
 
-  // Gün değiştiğinde taslak düzenlemeler sıfırlanır.
-  // Önceki günden otomatik kopyalama BİLEREK kaldırıldı: kullanıcı sadece
-  // bakmak için açtığı bir günde "Kaydet"e bastığında dünün puantajı o güne
-  // yazılıyordu. Artık kopyalama açık bir düğmeyle yapılır.
+  // Gün değiştiğinde taslak sıfırlanır. Önceki günden otomatik kopyalama
+  // BİLEREK yok: sadece bakmak için açılan günde "Kaydet"e basınca dünün
+  // puantajı o güne yazılıyordu. Kopyalama artık açık bir düğmeyle yapılır.
   const prevDateRef = useRef(dateStr);
   useEffect(() => {
     if (!dateStr || prevDateRef.current === dateStr) return;
@@ -145,14 +122,12 @@ export function DayDetailSheet({ isOpen, onClose, dateStr }: DayDetailSheetProps
   }, [dateStr]);
 
   const savedStatusOf = useCallback(
-    (workerId: number): AttendanceStatus | null => {
-      const a = attendances.find(
+    (workerId: number): AttendanceStatus | null =>
+      attendances.find(
         (att: Attendance) =>
           Number(att.worker_id) === Number(workerId) &&
           String(att.date).trim() === String(dateStr).trim(),
-      );
-      return a?.status ?? null;
-    },
+      )?.status ?? null,
     [attendances, dateStr],
   );
 
@@ -202,19 +177,12 @@ export function DayDetailSheet({ isOpen, onClose, dateStr }: DayDetailSheetProps
 
   const calculations = useMemo(() => {
     if (!dateStr) {
-      return {
-        totalWorkerCosts: 0,
-        netProfit: 0,
-        partnerShare: 0,
-        individualEarnings: {} as Record<number, number>,
-      };
+      return { totalWorkerCosts: 0, netProfit: 0, partnerShare: 0, individualEarnings: {} };
     }
-
     const attMap: Record<number, AttendanceStatus | null> = {};
     calcWorkers.forEach((w) => {
       attMap[w.id] = getWorkerStatus(w.id);
     });
-
     return calculateDailyEarnings(
       calcWorkers,
       attMap,
@@ -227,10 +195,9 @@ export function DayDetailSheet({ isOpen, onClose, dateStr }: DayDetailSheetProps
   const handleSave = async () => {
     if (!dateStr || isSaving) return;
     setIsSaving(true);
-
     try {
-      // Önce günün finansal verisi, sonra puantaj. Herhangi biri patlarsa
-      // hata yukarı çıkar, pencere KAPANMAZ ve kullanıcı durumu görür.
+      // Önce günün finansal verisi, sonra puantaj. Herhangi biri patlarsa hata
+      // yukarı çıkar, sayfa KAPANMAZ ve kullanıcı durumu görür.
       await updateMetrics(
         dateStr,
         Number(production),
@@ -268,36 +235,46 @@ export function DayDetailSheet({ isOpen, onClose, dateStr }: DayDetailSheetProps
 
   if (!dateStr) return null;
 
-  const numberInput =
-    "disabled:opacity-60 disabled:cursor-not-allowed flex h-12 w-full rounded-xl border border-border bg-muted/30 px-4 text-base font-bold font-mono tracking-tight transition-all focus:bg-background focus:border-primary focus:ring-0 outline-none";
+  const fieldClass =
+    "h-12 w-full rounded-control bg-muted/50 px-3.5 text-[15px] font-semibold tabular-nums " +
+    "border border-transparent outline-none transition-colors " +
+    "focus:border-primary focus:bg-background disabled:opacity-60";
 
   return (
-    <Dialog open={isOpen} onOpenChange={(open) => !open && requestClose()}>
-      <DialogContent
-        className="max-w-md w-[95vw] max-h-[90vh] flex flex-col rounded-3xl p-0 gap-0 border-none shadow-2xl bg-background animate-scale-in"
-        onInteractOutside={(e) => {
-          if (isDirty) e.preventDefault();
-        }}
-      >
-        <div className="px-5 pt-6 flex flex-col flex-1 min-h-0">
-          <DialogHeader className="mb-3 shrink-0 text-left">
-            <div className="flex justify-between items-center gap-3">
-              <div className="flex-1 min-w-0">
-                <DialogTitle className="text-lg font-black tracking-tight truncate">
-                  {format(parseISO(dateStr), "dd MMMM yyyy, EEEE", { locale: tr })}
-                </DialogTitle>
-                {isClosed && (
-                  <p className="text-[11px] font-bold text-sky-600 dark:text-sky-400 uppercase tracking-wider mt-0.5 flex items-center gap-1">
+    <>
+      <Sheet open={isOpen} onOpenChange={(open) => !open && requestClose()}>
+        <SheetContent
+          side="bottom"
+          showCloseButton={false}
+          onInteractOutside={(e) => {
+            if (isDirty) e.preventDefault();
+          }}
+          className="mx-auto w-full max-w-md h-[92vh] rounded-t-sheet border-t-0 p-0 gap-0 bg-background"
+        >
+          {/* Tutamak + başlık */}
+          <SheetHeader className="p-0 gap-0 shrink-0">
+            <div className="flex justify-center pt-2.5 pb-1">
+              <div className="w-9 h-1 rounded-full bg-muted-foreground/25" />
+            </div>
+            <div className="px-5 pb-3 flex items-center justify-between gap-3">
+              <div className="min-w-0">
+                <SheetTitle className="text-[17px] font-semibold tracking-tight truncate text-left">
+                  {format(parseISO(dateStr), "d MMMM yyyy", { locale: tr })}
+                </SheetTitle>
+                {isClosed ? (
+                  <p className="text-[11px] text-info flex items-center gap-1 mt-0.5">
                     <Lock className="w-3 h-3" />
                     {formatPeriod(periodOf(dateStr))} kapalı — salt okunur
                   </p>
-                )}
-                {!isClosed && isDirty && (
-                  <p className="text-[10px] font-bold text-amber-600 dark:text-amber-500 uppercase tracking-wider mt-0.5">
-                    Kaydedilmemiş değişiklik var
+                ) : isDirty ? (
+                  <p className="text-[11px] text-warn mt-0.5">Kaydedilmemiş değişiklik var</p>
+                ) : (
+                  <p className="text-[11px] text-muted-foreground mt-0.5 capitalize">
+                    {format(parseISO(dateStr), "EEEE", { locale: tr })}
                   </p>
                 )}
               </div>
+
               <button
                 type="button"
                 onClick={() => {
@@ -306,320 +283,257 @@ export function DayDetailSheet({ isOpen, onClose, dateStr }: DayDetailSheetProps
                 }}
                 aria-pressed={isHoliday}
                 disabled={isClosed}
-                className={`shrink-0 h-9 px-3 disabled:opacity-50 rounded-xl border text-[10px] font-black uppercase tracking-wider flex items-center gap-1.5 transition-all active:scale-95 ${
+                className={`shrink-0 h-9 px-3 rounded-control text-[12px] font-medium flex items-center gap-1.5 transition-all active:scale-95 disabled:opacity-50 ${
                   isHoliday
-                    ? "bg-sky-500 text-white border-sky-500 shadow-md shadow-sky-500/20"
-                    : "bg-transparent text-muted-foreground border-border hover:bg-muted"
+                    ? "bg-info text-white"
+                    : "bg-muted/60 text-muted-foreground hover:text-foreground"
                 }`}
               >
                 <Palmtree className="w-3.5 h-3.5" />
-                Resmî Tatil
+                Tatil
               </button>
             </div>
-          </DialogHeader>
+          </SheetHeader>
 
           {isLoading ? (
             <DetailSkeleton />
           ) : (
-            <div className="flex-1 overflow-y-auto no-scrollbar touch-pan-y -mx-5 px-5">
-              <div className="space-y-4 pb-28">
-                {/* Üretim ve finansal veriler */}
-                <div className="p-4 rounded-2xl border bg-card border-border shadow-sm">
-                  <div className="flex items-center gap-2.5 mb-4">
-                    <div className="w-9 h-9 rounded-xl flex items-center justify-center bg-primary/10 text-primary dark:bg-primary/20">
-                      <ReceiptText className="w-4.5 h-4.5" />
-                    </div>
-                    <div>
-                      <h3 className="font-bold text-sm">Günlük Performans</h3>
-                      <p className="text-[10px] text-muted-foreground font-medium uppercase tracking-wider">
-                        Veri & Finans
-                      </p>
-                    </div>
-                  </div>
+            <div className="flex-1 overflow-y-auto no-scrollbar px-5 pb-6">
+              {/* Günün rakamları — iç içe kart yok, doğrudan alanlar */}
+              <div className="grid grid-cols-2 gap-3">
+                <label className="col-span-2 block">
+                  <span className="text-[12px] text-muted-foreground mb-1.5 block">
+                    Üretim (palet)
+                  </span>
+                  <input
+                    type="number"
+                    inputMode="decimal"
+                    min={0}
+                    disabled={isClosed}
+                    value={production || ""}
+                    onChange={(e) => {
+                      setProduction(Math.max(parseFloat(e.target.value) || 0, 0));
+                      markDirty();
+                    }}
+                    className={fieldClass}
+                    placeholder="0"
+                  />
+                </label>
 
-                  <div className="space-y-3">
-                    <div>
-                      <label
-                        htmlFor="day-production"
-                        className="text-[11px] font-bold text-muted-foreground ml-1 mb-1.5 block uppercase tracking-wider"
-                      >
-                        Toplam Palet
-                      </label>
-                      <input
-                        id="day-production"
-                        type="number"
-                        inputMode="decimal"
-                        min={0}
-                        disabled={isClosed}
-                        value={production || ""}
-                        onChange={(e) => {
-                          setProduction(Math.max(parseFloat(e.target.value) || 0, 0));
-                          markDirty();
-                        }}
-                        className={numberInput}
-                        placeholder="0"
-                      />
-                    </div>
+                <label className="block">
+                  <span className="text-[12px] text-muted-foreground mb-1.5 block">Ciro ₺</span>
+                  <input
+                    type="number"
+                    inputMode="decimal"
+                    min={0}
+                    disabled={isClosed}
+                    value={totalEarned || ""}
+                    onChange={(e) => {
+                      setTotalEarned(Math.max(parseFloat(e.target.value) || 0, 0));
+                      markDirty();
+                    }}
+                    className={fieldClass}
+                    placeholder="0"
+                  />
+                </label>
 
-                    <div className="grid grid-cols-2 gap-2.5">
-                      <div>
-                        <label
-                          htmlFor="day-earned"
-                          className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400 ml-1 mb-1.5 block uppercase tracking-wider"
-                        >
-                          Ciro (₺)
-                        </label>
-                        <div className="relative">
-                          <Wallet className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-emerald-400 dark:text-emerald-500" />
-                          <input
-                            id="day-earned"
-                            type="number"
-                            inputMode="decimal"
-                            min={0}
-                            disabled={isClosed}
-                            value={totalEarned || ""}
-                            onChange={(e) => {
-                              setTotalEarned(Math.max(parseFloat(e.target.value) || 0, 0));
-                              markDirty();
-                            }}
-                            className={`${numberInput} pl-10 pr-3 focus:border-emerald-500`}
-                            placeholder="0"
-                          />
-                        </div>
-                      </div>
-                      <div>
-                        <label
-                          htmlFor="day-expenses"
-                          className="text-[11px] font-bold text-rose-600 dark:text-rose-400 ml-1 mb-1.5 block uppercase tracking-wider"
-                        >
-                          Gider (₺)
-                        </label>
-                        <div className="relative">
-                          <ReceiptText className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-rose-400 dark:text-rose-500" />
-                          <input
-                            id="day-expenses"
-                            type="number"
-                            inputMode="decimal"
-                            min={0}
-                            disabled={isClosed}
-                            value={extraExpenses || ""}
-                            onChange={(e) => {
-                              setExtraExpenses(Math.max(parseFloat(e.target.value) || 0, 0));
-                              markDirty();
-                            }}
-                            className={`${numberInput} pl-10 pr-3 focus:border-rose-500`}
-                            placeholder="0"
-                          />
-                        </div>
-                      </div>
-                    </div>
+                <label className="block">
+                  <span className="text-[12px] text-muted-foreground mb-1.5 block">Gider ₺</span>
+                  <input
+                    type="number"
+                    inputMode="decimal"
+                    min={0}
+                    disabled={isClosed}
+                    value={extraExpenses || ""}
+                    onChange={(e) => {
+                      setExtraExpenses(Math.max(parseFloat(e.target.value) || 0, 0));
+                      markDirty();
+                    }}
+                    className={fieldClass}
+                    placeholder="0"
+                  />
+                </label>
+              </div>
 
-                    {/* Günün özeti */}
-                    <div className="grid grid-cols-2 gap-2.5 pt-1">
-                      <div className="rounded-xl bg-muted/40 border px-3 py-2">
-                        <div className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
-                          Yevmiye Gideri
-                        </div>
-                        <div className="text-sm font-black font-mono">
-                          ₺{Math.round(calculations.totalWorkerCosts).toLocaleString("tr-TR")}
-                        </div>
-                      </div>
-                      <div className="rounded-xl bg-muted/40 border px-3 py-2">
-                        <div className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
-                          Net Kâr
-                        </div>
-                        <div
-                          className={`text-sm font-black font-mono ${
-                            calculations.netProfit < 0
-                              ? "text-rose-600 dark:text-rose-400"
-                              : "text-emerald-600 dark:text-emerald-400"
-                          }`}
-                        >
-                          ₺{Math.round(calculations.netProfit).toLocaleString("tr-TR")}
-                        </div>
-                      </div>
-                    </div>
+              {/* Hesaplanan özet — çerçevesiz, sadece ayraçla */}
+              <div className="mt-4 py-3 border-y border-border/60 flex items-center justify-between text-[13px]">
+                <span className="text-muted-foreground">Yevmiye gideri</span>
+                <span className="font-semibold tabular-nums">
+                  {money(calculations.totalWorkerCosts)}
+                </span>
+                <span className="w-px h-4 bg-border" />
+                <span className="text-muted-foreground">Net kâr</span>
+                <span
+                  className={`font-semibold tabular-nums ${
+                    calculations.netProfit < 0 ? "text-bad" : "text-ok"
+                  }`}
+                >
+                  {money(calculations.netProfit)}
+                </span>
+              </div>
 
-                    {calculations.netProfit < 0 && (
-                      <p className="text-[11px] text-rose-600 dark:text-rose-400 font-semibold leading-relaxed">
-                        Bu gün zararda. Zarar, çalışan ortaklar arasında gün ağırlığına göre
-                        paylaştırılıyor.
-                      </p>
-                    )}
-                  </div>
+              {calculations.netProfit < 0 && (
+                <p className="mt-2 text-[12px] text-bad leading-relaxed">
+                  Bu gün zararda. Zarar, çalışan ortaklar arasında gün ağırlığına göre
+                  paylaştırılıyor.
+                </p>
+              )}
+
+              {/* Puantaj */}
+              <div className="mt-5 flex items-center justify-between gap-2">
+                <h3 className="text-[13px] font-medium text-muted-foreground">Puantaj</h3>
+                <div className="flex gap-1.5">
+                  <button
+                    onClick={copyPreviousDay}
+                    disabled={hasSavedAttendance || isClosed}
+                    title={
+                      hasSavedAttendance
+                        ? "Bu güne ait kayıt zaten var"
+                        : "Bir önceki günün puantajını kopyala"
+                    }
+                    className="h-8 px-2.5 rounded-lg bg-muted/60 text-[12px] text-muted-foreground hover:text-foreground flex items-center gap-1.5 active:scale-95 transition-all disabled:opacity-40"
+                  >
+                    <CopyPlus className="w-3.5 h-3.5" /> Dünü kopyala
+                  </button>
+                  <button
+                    onClick={() => setAllTo("FULL")}
+                    disabled={isClosed}
+                    title="Tümünü tam gün yap"
+                    aria-label="Tümünü tam gün yap"
+                    className="h-8 w-8 rounded-lg bg-muted/60 text-muted-foreground hover:text-ok flex items-center justify-center active:scale-95 transition-all disabled:opacity-40"
+                  >
+                    <CheckCheck className="w-4 h-4" />
+                  </button>
+                  <button
+                    onClick={() => setAllTo(null)}
+                    disabled={isClosed}
+                    title="Seçimleri temizle"
+                    aria-label="Tüm seçimleri temizle"
+                    className="h-8 w-8 rounded-lg bg-muted/60 text-muted-foreground hover:text-foreground flex items-center justify-center active:scale-95 transition-all disabled:opacity-40"
+                  >
+                    <Eraser className="w-4 h-4" />
+                  </button>
                 </div>
+              </div>
 
-                {/* Puantaj */}
-                <div>
-                  <div className="flex items-center justify-between mb-3 ml-1 pr-1 gap-2">
-                    <h3 className="font-bold text-[11px] text-muted-foreground uppercase tracking-wider">
-                      Çalışma Durumu
-                    </h3>
-                    <div className="flex gap-1.5">
-                      <button
-                        onClick={copyPreviousDay}
-                        disabled={hasSavedAttendance || isClosed}
-                        className="px-2.5 py-1.5 bg-muted/60 text-foreground border rounded-lg text-[10px] font-black uppercase tracking-wider active:scale-95 transition-transform flex items-center gap-1 disabled:opacity-40"
-                        title={
-                          hasSavedAttendance
-                            ? "Bu güne ait kayıt zaten var"
-                            : "Bir önceki günün puantajını kopyala"
-                        }
-                      >
-                        <CopyPlus className="w-3 h-3" /> Dünü Kopyala
-                      </button>
-                      <button
-                        onClick={() => setAllTo("FULL")}
-                        disabled={isClosed}
-                        className="disabled:opacity-40 px-2.5 py-1.5 bg-emerald-50 text-emerald-600 border border-emerald-200 dark:bg-emerald-500/10 dark:border-emerald-500/20 dark:text-emerald-400 rounded-lg text-[10px] font-black uppercase tracking-wider active:scale-95 transition-transform"
-                      >
-                        Tümü Tam
-                      </button>
-                      <button
-                        onClick={() => setAllTo(null)}
-                        disabled={isClosed}
-                        aria-label="Tüm seçimleri temizle"
-                        className="disabled:opacity-40 px-2 py-1.5 bg-muted/60 text-muted-foreground border rounded-lg active:scale-95 transition-transform"
-                        title="Seçimleri temizle"
-                      >
-                        <Eraser className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                  </div>
+              <div className="mt-2.5 space-y-2.5">
+                {calcWorkers.map((worker: Worker) => {
+                  const status = getWorkerStatus(worker.id);
+                  const earnings = calculations.individualEarnings[worker.id] || 0;
+                  const isArchived = worker.is_active === false;
 
-                  <div className="space-y-2.5">
-                    {calcWorkers.map((worker: Worker) => {
-                      const status = getWorkerStatus(worker.id);
-                      const earnings = calculations.individualEarnings[worker.id] || 0;
-                      const isArchived = worker.is_active === false;
+                  return (
+                    <div
+                      key={worker.id}
+                      className={`rounded-card surface-raised p-3 ${isArchived ? "opacity-70" : ""}`}
+                    >
+                      <div className="flex items-center justify-between gap-2 mb-2.5">
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <WorkerAvatar name={worker.name} type={worker.worker_type} />
+                          <div className="min-w-0">
+                            <p className="text-[14px] font-medium leading-tight truncate">
+                              {worker.name}
+                            </p>
+                            <p className="text-[11px] text-muted-foreground flex items-center gap-1">
+                              {worker.worker_type === "ORTAK" ? "Ortak" : "Yevmiyeli"}
+                              {isArchived && (
+                                <span className="inline-flex items-center gap-0.5">
+                                  <Archive className="w-2.5 h-2.5" /> arşivde
+                                </span>
+                              )}
+                            </p>
+                          </div>
+                        </div>
+                        <div className="text-right shrink-0">
+                          <p
+                            className={`text-[15px] font-semibold tabular-nums ${
+                              earnings < 0 ? "text-bad" : ""
+                            }`}
+                          >
+                            {money(earnings)}
+                          </p>
+                        </div>
+                      </div>
 
-                      return (
-                        <div
-                          key={worker.id}
-                          className={`p-3.5 rounded-2xl border bg-card shadow-sm ${isArchived ? "opacity-70 border-dashed" : ""}`}
-                        >
-                          <div className="flex items-center justify-between mb-2.5 gap-2">
-                            <div className="flex items-center gap-2.5 min-w-0">
-                              <div
-                                className={`w-8 h-8 rounded-lg flex items-center justify-center font-bold text-xs text-white shrink-0 ${
-                                  worker.worker_type === "ORTAK"
-                                    ? "bg-linear-to-br from-amber-400 to-orange-500"
-                                    : "bg-linear-to-br from-blue-400 to-indigo-500"
+                      {isArchived ? (
+                        <p className="text-[11px] text-muted-foreground">
+                          Arşivlenmiş çalışan — bu günün kaydı olduğu için hesaba dahil, buradan
+                          değiştirilemez.
+                        </p>
+                      ) : (
+                        <div className="flex gap-1 p-1 rounded-control bg-muted/50">
+                          {SEGMENTS.map(({ status: s, label, icon: Icon, active }) => {
+                            const on = status === s;
+                            return (
+                              <button
+                                key={s}
+                                type="button"
+                                aria-pressed={on}
+                                disabled={isClosed}
+                                aria-label={`${worker.name}: ${label}`}
+                                onClick={() => {
+                                  setEdits((prev) => ({ ...prev, [worker.id]: on ? null : s }));
+                                  markDirty();
+                                }}
+                                className={`flex-1 h-10 rounded-[0.6rem] flex items-center justify-center gap-1 text-[12px] font-medium transition-all active:scale-95 disabled:opacity-50 ${
+                                  on
+                                    ? `${active} shadow-sm`
+                                    : "text-foreground/65 hover:text-foreground hover:bg-background/60"
                                 }`}
                               >
-                                {worker.name.charAt(0).toUpperCase()}
-                              </div>
-                              <div className="min-w-0">
-                                <p className="font-bold text-[13px] leading-tight truncate">
-                                  {worker.name}
-                                </p>
-                                <p
-                                  className={`text-[10px] font-bold uppercase flex items-center gap-1 ${
-                                    worker.worker_type === "ORTAK"
-                                      ? "text-amber-600 dark:text-amber-500"
-                                      : "text-primary"
-                                  }`}
-                                >
-                                  {worker.worker_type === "ORTAK" ? "Ortak" : "Günlük"}
-                                  {isArchived && (
-                                    <span className="text-muted-foreground inline-flex items-center gap-0.5">
-                                      <Archive className="w-2.5 h-2.5" /> arşivde
-                                    </span>
-                                  )}
-                                </p>
-                              </div>
-                            </div>
-                            <div className="text-right shrink-0">
-                              <p
-                                className={`text-sm font-black font-mono tracking-tight ${earnings >= 0 ? "text-foreground" : "text-rose-600"}`}
-                              >
-                                ₺{Math.round(earnings).toLocaleString("tr-TR")}
-                              </p>
-                              <p className="text-[10px] text-muted-foreground font-bold uppercase tracking-wider">
-                                Hakediş
-                              </p>
-                            </div>
-                          </div>
-
-                          {isArchived ? (
-                            <p className="text-[11px] text-muted-foreground font-medium">
-                              Arşivlenmiş çalışan — bu günün kaydı olduğu için hesaba dahil, ancak
-                              buradan değiştirilemez.
-                            </p>
-                          ) : (
-                            <div className="grid grid-cols-4 gap-1.5">
-                              {STATUS_BUTTONS.map(
-                                ({ status: s, label, icon: Icon, activeClass, idleClass }) => {
-                                  const active = status === s;
-                                  return (
-                                    <button
-                                      key={s}
-                                      type="button"
-                                      aria-pressed={active}
-                                      disabled={isClosed}
-                                      aria-label={`${worker.name}: ${label}`}
-                                      className={`h-11 rounded-xl flex flex-col items-center justify-center gap-0.5 text-[10px] font-black uppercase border transition-all active:scale-95 disabled:opacity-50 ${active ? activeClass : idleClass}`}
-                                      onClick={() => {
-                                        setEdits((prev) => ({
-                                          ...prev,
-                                          [worker.id]: active ? null : s,
-                                        }));
-                                        markDirty();
-                                      }}
-                                    >
-                                      <Icon className="w-4 h-4" />
-                                      {label}
-                                    </button>
-                                  );
-                                },
-                              )}
-                            </div>
-                          )}
+                                <Icon className="w-3.5 h-3.5" strokeWidth={2.5} />
+                                {label}
+                              </button>
+                            );
+                          })}
                         </div>
-                      );
-                    })}
-                  </div>
-                </div>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             </div>
           )}
 
-          <div className="py-4 border-t mt-auto bg-background shrink-0 flex gap-3 px-5 rounded-b-3xl">
+          {/* Eylemler */}
+          <div className="shrink-0 px-5 py-3 border-t bg-background flex gap-3 pb-safe-nav">
             <button
-              className="w-1/3 rounded-2xl h-12 font-bold text-muted-foreground bg-muted/50 hover:bg-muted transition-all active:scale-[0.97] text-sm"
+              className="w-1/3 h-12 rounded-control bg-muted/60 text-[14px] font-medium text-muted-foreground hover:text-foreground active:scale-[0.97] transition-all"
               onClick={requestClose}
             >
               İptal
             </button>
             <button
               disabled={isSaving || isClosed}
-              className={`w-2/3 rounded-2xl h-12 font-black text-white bg-linear-to-r from-primary to-purple-600 shadow-lg shadow-primary/20 transition-all active:scale-[0.97] text-sm ${isSaving || isClosed ? "opacity-60 cursor-not-allowed" : ""}`}
+              className="w-2/3 h-12 rounded-control bg-primary text-primary-foreground text-[14px] font-semibold shadow-sm active:scale-[0.97] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
               onClick={handleSave}
             >
-              {isClosed ? "Dönem Kapalı" : isSaving ? "Kaydediliyor..." : "Kaydet"}
+              {isClosed ? "Dönem kapalı" : isSaving ? "Kaydediliyor..." : "Kaydet"}
             </button>
           </div>
-        </div>
-      </DialogContent>
+        </SheetContent>
+      </Sheet>
 
       {/* Kaydedilmemiş değişiklik uyarısı */}
       <Dialog open={confirmDiscard} onOpenChange={setConfirmDiscard}>
-        <DialogContent className="w-[90%] max-w-sm rounded-3xl p-6 border-none shadow-2xl">
-          <DialogHeader className="mb-2">
-            <DialogTitle className="text-lg font-black">Değişiklikler kaydedilmedi</DialogTitle>
+        <DialogContent className="w-[90%] max-w-sm rounded-sheet p-6 border-none shadow-2xl">
+          <DialogHeader className="mb-1">
+            <DialogTitle className="text-base font-semibold">
+              Değişiklikler kaydedilmedi
+            </DialogTitle>
           </DialogHeader>
-          <p className="text-sm text-muted-foreground font-medium py-2">
+          <p className="text-[13px] text-muted-foreground leading-relaxed py-1">
             Bu günde kaydedilmemiş düzenlemeler var. Çıkarsanız bu düzenlemeler kaybolur.
           </p>
           <div className="flex gap-3 mt-4">
             <button
-              className="flex-1 h-12 rounded-xl border font-bold text-xs hover:bg-muted"
+              className="flex-1 h-11 rounded-control bg-muted/60 text-[13px] font-medium hover:bg-muted"
               onClick={() => setConfirmDiscard(false)}
             >
-              Düzenlemeye Dön
+              Düzenlemeye dön
             </button>
             <button
-              className="flex-1 h-12 rounded-xl bg-rose-500 text-white font-bold text-xs shadow-md shadow-rose-500/20"
+              className="flex-1 h-11 rounded-control bg-bad text-white text-[13px] font-medium"
               onClick={() => {
                 setConfirmDiscard(false);
                 setIsDirty(false);
@@ -627,11 +541,11 @@ export function DayDetailSheet({ isOpen, onClose, dateStr }: DayDetailSheetProps
                 onClose();
               }}
             >
-              Yine de Çık
+              Yine de çık
             </button>
           </div>
         </DialogContent>
       </Dialog>
-    </Dialog>
+    </>
   );
 }

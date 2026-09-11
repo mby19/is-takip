@@ -180,21 +180,19 @@ export function MonthSummaryScreen({ onWorkerClick }: MonthSummaryScreenProps) {
   };
 
   return (
-    <div className="flex flex-col h-full overflow-hidden animate-scale-in">
+    <div className="flex flex-col h-full overflow-hidden animate-screen-enter">
       <header className="pt-safe-header pb-4 px-5 border-b bg-card shrink-0">
         <div className="flex items-center gap-3 mb-3">
-          <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center">
+          <div className="w-10 h-10 rounded-control bg-primary/10 flex items-center justify-center">
             <Scale className="w-5 h-5 text-primary" />
           </div>
           <div>
-            <h1 className="text-lg font-black tracking-tight">Ay Sonu</h1>
-            <p className="text-[10px] font-bold text-muted-foreground tracking-wider uppercase">
-              Hakediş ve ödeme özeti
-            </p>
+            <h1 className="text-lg font-semibold tracking-tight">Ay Sonu</h1>
+            <p className="text-[10px] font-bold text-muted-foreground  ">Hakediş ve ödeme özeti</p>
           </div>
         </div>
 
-        <div className="flex items-center justify-between bg-muted/30 rounded-xl p-1 border">
+        <div className="flex items-center justify-between bg-muted/30 rounded-control p-1 border">
           <button
             onClick={() => setCurrentMonth((p) => new Date(p.getFullYear(), p.getMonth() - 1, 1))}
             aria-label="Önceki ay"
@@ -203,9 +201,9 @@ export function MonthSummaryScreen({ onWorkerClick }: MonthSummaryScreenProps) {
             <ChevronLeft className="w-4 h-4" />
           </button>
           <div className="flex items-center gap-2">
-            <span className="text-sm font-black capitalize">{monthLabel}</span>
+            <span className="text-[14px] font-semibold capitalize">{monthLabel}</span>
             {isClosed && (
-              <span className="text-[10px] font-black uppercase tracking-wider text-sky-600 dark:text-sky-400 bg-sky-500/10 px-1.5 py-0.5 rounded flex items-center gap-1">
+              <span className="text-[11px] font-medium text-info bg-info-soft px-1.5 py-0.5 rounded flex items-center gap-1">
                 <Lock className="w-2.5 h-2.5" /> Kapalı
               </span>
             )}
@@ -228,11 +226,9 @@ export function MonthSummaryScreen({ onWorkerClick }: MonthSummaryScreenProps) {
         ) : (
           <>
             {/* Ödenecek toplam — ekranın asıl cevabı */}
-            <div className="rounded-2xl border-2 border-primary/20 bg-linear-to-br from-primary/5 to-primary/10 p-4">
-              <div className="text-[10px] font-black uppercase tracking-widest text-primary/70">
-                Bu ay ödenecek kalan
-              </div>
-              <div className="text-3xl font-black font-mono tracking-tight text-primary mt-1">
+            <div className="rounded-card border-2 border-primary/20 surface-raised p-4">
+              <div className="text-[11px] font-medium text-primary/70">Bu ay ödenecek kalan</div>
+              <div className="text-3xl font-semibold font-mono tracking-tight text-primary mt-1">
                 {money(totals.due)}
               </div>
               <div className="text-[11px] font-bold text-muted-foreground mt-1.5">
@@ -256,18 +252,15 @@ export function MonthSummaryScreen({ onWorkerClick }: MonthSummaryScreenProps) {
                   icon: Scale,
                   label: "Net kâr",
                   value: money(business.netProfit),
-                  cls:
-                    business.netProfit < 0
-                      ? "text-rose-600 dark:text-rose-400"
-                      : "text-emerald-600 dark:text-emerald-400",
+                  cls: business.netProfit < 0 ? "text-bad" : "text-ok",
                 },
               ].map(({ icon: Icon, label, value, cls }) => (
-                <div key={label} className="rounded-xl border bg-card p-3">
+                <div key={label} className="rounded-control border bg-card p-3">
                   <div className="flex items-center gap-1.5 text-muted-foreground">
                     <Icon className="w-3.5 h-3.5" />
-                    <span className="text-[10px] font-bold uppercase tracking-wider">{label}</span>
+                    <span className="text-[11px]">{label}</span>
                   </div>
-                  <div className={`text-base font-black font-mono tracking-tight mt-1 ${cls}`}>
+                  <div className={`text-base font-semibold font-mono tracking-tight mt-1 ${cls}`}>
                     {value}
                   </div>
                 </div>
@@ -281,18 +274,18 @@ export function MonthSummaryScreen({ onWorkerClick }: MonthSummaryScreenProps) {
 
             {/* Kişi bazlı döküm */}
             <div>
-              <h2 className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-1 mb-2 flex items-center gap-1.5">
+              <h2 className="text-[11px] font-medium text-muted-foreground ml-1 mb-2 flex items-center gap-1.5">
                 <Users className="w-3.5 h-3.5" /> Kişi bazlı
               </h2>
 
               {rows.length === 0 ? (
-                <div className="rounded-2xl border border-dashed bg-card/50 py-10 text-center">
+                <div className="rounded-card border border-dashed bg-card/50 py-10 text-center">
                   <p className="text-xs font-bold text-muted-foreground">
                     {monthLabel} döneminde kayıt yok
                   </p>
                 </div>
               ) : (
-                <div className="rounded-2xl border bg-card overflow-hidden divide-y">
+                <div className="rounded-card border bg-card overflow-hidden divide-y">
                   {rows.map(({ worker, stats }) => (
                     <button
                       key={worker.id}
@@ -302,9 +295,7 @@ export function MonthSummaryScreen({ onWorkerClick }: MonthSummaryScreenProps) {
                       <div className="flex items-center gap-2.5 min-w-0">
                         <div
                           className={`w-8 h-8 rounded-lg flex items-center justify-center font-bold text-xs text-white shrink-0 ${
-                            worker.worker_type === "ORTAK"
-                              ? "bg-linear-to-br from-amber-400 to-orange-500"
-                              : "bg-linear-to-br from-blue-400 to-indigo-500"
+                            worker.worker_type === "ORTAK" ? "bg-warn" : "bg-primary"
                           }`}
                         >
                           {worker.name.charAt(0).toUpperCase()}
@@ -321,17 +312,17 @@ export function MonthSummaryScreen({ onWorkerClick }: MonthSummaryScreenProps) {
                       </div>
                       <div className="text-right shrink-0">
                         <div
-                          className={`text-sm font-black font-mono tracking-tight ${
+                          className={`text-[14px] font-semibold font-mono tracking-tight ${
                             stats.periodBalance > 0
-                              ? "text-emerald-700 dark:text-emerald-400"
+                              ? "text-ok"
                               : stats.periodBalance < 0
-                                ? "text-rose-600 dark:text-rose-400"
+                                ? "text-bad"
                                 : "text-muted-foreground"
                           }`}
                         >
                           {money(stats.periodBalance)}
                         </div>
-                        <div className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                        <div className="text-[11px] text-muted-foreground">
                           {stats.periodBalance >= 0 ? "ödenecek" : "fazla ödeme"}
                         </div>
                       </div>
@@ -344,10 +335,10 @@ export function MonthSummaryScreen({ onWorkerClick }: MonthSummaryScreenProps) {
             {/* Dönem kilidi */}
             <button
               onClick={() => setConfirmLock(true)}
-              className={`w-full h-12 rounded-xl border-2 font-black text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-all active:scale-[0.98] ${
+              className={`w-full h-12 rounded-control border-2 font-semibold text-xs flex items-center justify-center gap-2 transition-all active:scale-[0.98] ${
                 isClosed
                   ? "border-amber-300 text-amber-700 dark:border-amber-500/40 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-500/10"
-                  : "border-sky-300 text-sky-700 dark:border-sky-500/40 dark:text-sky-400 hover:bg-sky-50 dark:hover:bg-sky-500/10"
+                  : "border-sky-300 text-sky-700 dark:border-sky-500/40 dark:text-sky-400 hover:bg-sky-50 dark:hover:bg-info-soft"
               }`}
             >
               {isClosed ? <LockOpen className="w-4 h-4" /> : <Lock className="w-4 h-4" />}
@@ -358,36 +349,37 @@ export function MonthSummaryScreen({ onWorkerClick }: MonthSummaryScreenProps) {
       </div>
 
       <Dialog open={confirmLock} onOpenChange={setConfirmLock}>
-        <DialogContent className="w-[90%] max-w-sm rounded-3xl p-6 border-none shadow-2xl">
+        <DialogContent className="w-[90%] max-w-sm rounded-sheet p-6 border-none shadow-2xl">
           <DialogHeader className="mb-2">
-            <DialogTitle className="text-lg font-black">
+            <DialogTitle className="text-[17px] font-semibold">
               {isClosed ? "Dönemi Yeniden Aç" : "Dönemi Kapat"}
             </DialogTitle>
           </DialogHeader>
           <p className="text-sm text-muted-foreground font-medium py-2 leading-relaxed">
             {isClosed ? (
               <>
-                <span className="font-black text-foreground">{monthLabel}</span> yeniden
+                <span className="font-semibold text-foreground">{monthLabel}</span> yeniden
                 düzenlenebilir hale gelecek. İşiniz bitince tekrar kapatmayı unutmayın.
               </>
             ) : (
               <>
-                <span className="font-black text-foreground">{monthLabel}</span> kapatılacak. Bu aya
-                ait puantaj, gün verisi ve ödemeler değiştirilemez olur. Ödenecek kalan:{" "}
-                <span className="font-black text-foreground font-mono">{money(totals.due)}</span>.
+                <span className="font-semibold text-foreground">{monthLabel}</span> kapatılacak. Bu
+                aya ait puantaj, gün verisi ve ödemeler değiştirilemez olur. Ödenecek kalan:{" "}
+                <span className="font-semibold text-foreground font-mono">{money(totals.due)}</span>
+                .
               </>
             )}
           </p>
           <div className="flex gap-3 mt-4">
             <button
-              className="flex-1 h-12 rounded-xl border font-bold text-xs hover:bg-muted disabled:opacity-50"
+              className="flex-1 h-12 rounded-control border font-bold text-xs hover:bg-muted disabled:opacity-50"
               onClick={() => setConfirmLock(false)}
               disabled={busy}
             >
               Vazgeç
             </button>
             <button
-              className={`flex-1 h-12 rounded-xl text-white font-bold text-xs shadow-md disabled:opacity-60 ${
+              className={`flex-1 h-12 rounded-control text-white font-bold text-xs shadow-md disabled:opacity-60 ${
                 isClosed ? "bg-amber-500 shadow-amber-500/20" : "bg-sky-500 shadow-sky-500/20"
               }`}
               onClick={toggleLock}

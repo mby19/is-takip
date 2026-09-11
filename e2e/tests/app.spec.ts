@@ -64,9 +64,9 @@ test.describe("İş Takip", () => {
       today.getDate(),
     ).padStart(2, "0")}`;
 
-    await page.getByRole("button", { name: `${dateStr} gününü aç` }).click();
+    await page.locator(`[data-date="${dateStr}"]`).click();
     await page.getByRole("button", { name: "Ahmet Yılmaz: Tam" }).click();
-    await page.getByLabel("Ciro (₺)").fill("5000");
+    await page.getByLabel("Ciro ₺").fill("5000");
     await page.getByRole("button", { name: "Kaydet" }).click();
 
     await expect(page.getByText("Gün kaydedildi")).toBeVisible();
@@ -96,7 +96,7 @@ test.describe("İş Takip", () => {
 
     // Gün detayı artık salt okunur
     await page.getByRole("button", { name: "Takvim" }).click();
-    await page.getByRole("button", { name: `${dateStr} gününü aç` }).click();
+    await page.locator(`[data-date="${dateStr}"]`).click();
     await expect(page.getByText(/kapalı — salt okunur/)).toBeVisible();
     await expect(page.getByRole("button", { name: "Dönem Kapalı" })).toBeDisabled();
   });

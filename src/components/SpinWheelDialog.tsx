@@ -89,13 +89,13 @@ export function SpinWheelDialog() {
       }}
     >
       <DialogTrigger asChild>
-        <button className="w-10 h-10 rounded-xl bg-primary/10 hover:bg-primary/20 flex items-center justify-center transition-all active:scale-95 group border border-primary/20">
+        <button className="w-10 h-10 rounded-control bg-primary/10 hover:bg-primary/20 flex items-center justify-center transition-all active:scale-95 group border border-primary/20">
           <Dices className="w-5 h-5 text-primary group-hover:-rotate-12 transition-transform duration-300" />
         </button>
       </DialogTrigger>
       <DialogContent className="rounded-[36px] border-none shadow-2xl p-6 max-w-sm w-[95%]">
         <DialogHeader className="mb-2">
-          <DialogTitle className="text-center font-black text-xl">Kura Çarkı</DialogTitle>
+          <DialogTitle className="text-center font-semibold text-xl">Kura Çarkı</DialogTitle>
         </DialogHeader>
 
         <div className="flex flex-col items-center py-2 space-y-6 overflow-hidden">
@@ -124,7 +124,7 @@ export function SpinWheelDialog() {
                 return (
                   <div
                     key={w.id}
-                    className="absolute w-62 h-62 top-0 left-0 flex justify-center items-start pt-6 text-white font-black text-[10px] drop-shadow-[0_1px_1px_rgba(0,0,0,0.5)]"
+                    className="absolute w-62 h-62 top-0 left-0 flex justify-center items-start pt-6 text-white font-semibold text-[10px] drop-shadow-[0_1px_1px_rgba(0,0,0,0.5)]"
                     style={{ transform: `rotate(${rotationAngle}deg)` }}
                   >
                     <span className="truncate max-w-20">{w.name.split(" ")[0]}</span>
@@ -142,11 +142,11 @@ export function SpinWheelDialog() {
           {/* SONUÇ & BİLGİ */}
           <div className="h-16 flex items-center justify-center w-full">
             {winner && !isSpinning ? (
-              <div className="bg-primary/10 border-2 border-primary/20 text-primary px-6 py-3 w-full rounded-2xl font-black text-xl flex items-center justify-center gap-3 animate-scale-in">
+              <div className="bg-primary/10 border-2 border-primary/20 text-primary px-6 py-3 w-full rounded-card font-semibold text-xl flex items-center justify-center gap-3 animate-screen-enter">
                 <PartyPopper className="w-6 h-6 animate-bounce" /> {winner}
               </div>
             ) : isSpinning ? (
-              <div className="text-primary text-sm font-black animate-pulse flex items-center gap-2">
+              <div className="text-primary text-[14px] font-semibold animate-pulse flex items-center gap-2">
                 <RotateCw className="w-4 h-4 animate-spin" /> Çark Dönüyor...
               </div>
             ) : (
@@ -159,14 +159,14 @@ export function SpinWheelDialog() {
           <Button
             onClick={spin}
             disabled={isSpinning || activeWorkers.length === 0}
-            className="w-full h-14 rounded-2xl font-black text-lg shadow-xl shadow-primary/20 transition-all active:scale-95 border-b-4 border-primary/40 active:border-b-0 active:translate-y-1"
+            className="w-full h-14 rounded-card font-semibold text-lg shadow-xl shadow-primary/20 transition-all active:scale-95 border-b-4 border-primary/40 active:border-b-0 active:translate-y-1"
           >
             {isSpinning ? "BEKLENİYOR..." : "ÇEVİR"}
           </Button>
 
           {/* KATILIMCILAR */}
-          <div className="w-full mt-4 bg-muted/30 p-3 rounded-2xl border border-border/50">
-            <div className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-1 mb-2">
+          <div className="w-full mt-4 bg-muted/30 p-3 rounded-card border border-border/50">
+            <div className="text-[11px] font-medium text-muted-foreground ml-1 mb-2">
               Katılımcılar ({activeWorkers.length})
             </div>
             <div className="flex gap-2 overflow-x-auto no-scrollbar pb-1">
@@ -177,7 +177,7 @@ export function SpinWheelDialog() {
                     key={w.id}
                     onClick={() => toggleWorker(w.id)}
                     disabled={isSpinning}
-                    className={`flex items-center gap-1.5 px-3 py-2 rounded-xl border-2 transition-all shrink-0 text-xs font-bold active:scale-95 ${
+                    className={`flex items-center gap-1.5 px-3 py-2 rounded-control border-2 transition-all shrink-0 text-xs font-bold active:scale-95 ${
                       selectedIds.has(w.id)
                         ? "border-primary bg-primary/5 text-foreground shadow-sm"
                         : "border-transparent bg-muted/50 text-muted-foreground opacity-50 grayscale"
