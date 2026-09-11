@@ -84,6 +84,8 @@ interface NormalizedBackup {
     worker_type: WorkerType;
     created_at: string | null;
     is_active: 0 | 1;
+    color: string | null;
+    short_label: string | null;
   }[];
   rates: {
     worker_id: number;
@@ -164,6 +166,9 @@ export function validateBackup(raw: unknown): NormalizedBackup {
       worker_type,
       created_at: row.created_at === undefined ? null : String(row.created_at),
       is_active: bool(row.is_active ?? 1),
+      color: row.color === null || row.color === undefined ? null : String(row.color),
+      short_label:
+        row.short_label === null || row.short_label === undefined ? null : String(row.short_label),
     };
   });
 
@@ -434,7 +439,16 @@ export const importDatabase = async (jsonString: string): Promise<ImportResult> 
 
     ...chunkedInsert(
       "workers",
-      ["id", "name", "daily_wage", "worker_type", "created_at", "is_active"],
+      [
+        "id",
+        "name",
+        "daily_wage",
+        "worker_type",
+        "created_at",
+        "is_active",
+        "color",
+        "short_label",
+      ],
       data.workers.map((w) => [
         w.id,
         w.name,
@@ -442,6 +456,8 @@ export const importDatabase = async (jsonString: string): Promise<ImportResult> 
         w.worker_type,
         w.created_at,
         w.is_active,
+        w.color,
+        w.short_label,
       ]),
     ),
 

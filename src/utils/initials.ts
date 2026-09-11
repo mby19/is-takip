@@ -42,6 +42,14 @@ export function workerInitials(workers: readonly Worker[]): Map<number, string> 
   const used = new Set<string>();
 
   for (const worker of workers) {
+    // Kullanıcı elle kısa etiket verdiyse ona dokunulmaz — kendi seçimi.
+    const custom = worker.short_label?.trim();
+    if (custom) {
+      result.set(worker.id, upper(custom));
+      used.add(upper(custom));
+      continue;
+    }
+
     const options = candidates(worker.name);
     let chosen = options.find((c) => !used.has(c));
 

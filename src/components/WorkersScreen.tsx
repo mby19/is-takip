@@ -97,7 +97,7 @@ export function WorkersScreen({ onWorkerClick }: WorkersScreenProps) {
               className="p-3 rounded-card surface-raised flex justify-between items-center gap-3 active:scale-[0.98] transition-all cursor-pointer"
             >
               <div className="flex items-center gap-3 min-w-0">
-                <WorkerAvatar name={w.name} type={w.worker_type} initials={initials.get(w.id)} />
+                <WorkerAvatar worker={w} label={initials.get(w.id)} />
                 <div className="min-w-0">
                   <p className="text-[14px] font-medium tracking-tight truncate">{w.name}</p>
                   <p className="text-[11px] text-muted-foreground">

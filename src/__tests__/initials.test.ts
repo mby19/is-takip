@@ -64,3 +64,16 @@ describe("workerInitials", () => {
     expect(workerInitials([w(1, "   ")]).get(1)).toBe("?");
   });
 });
+
+describe("kullanıcı etiketi", () => {
+  it("elle verilen kısa etiket korunur", () => {
+    const custom = { ...w(1, "Mehmet Demir"), short_label: "METO" };
+    expect(workerInitials([custom]).get(1)).toBe("METO");
+  });
+
+  it("elle etiket verilmeyenler yine benzersizleşir", () => {
+    const map = workerInitials([{ ...w(1, "Mehmet Demir"), short_label: "M" }, w(2, "Murat Kaya")]);
+    expect(map.get(1)).toBe("M");
+    expect(map.get(2)).not.toBe("M");
+  });
+});

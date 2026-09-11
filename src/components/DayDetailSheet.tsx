@@ -429,7 +429,7 @@ export function DayDetailSheet({ isOpen, onClose, dateStr }: DayDetailSheetProps
                     >
                       <div className="flex items-center justify-between gap-2 mb-2.5">
                         <div className="flex items-center gap-2.5 min-w-0">
-                          <WorkerAvatar name={worker.name} type={worker.worker_type} />
+                          <WorkerAvatar worker={worker} />
                           <div className="min-w-0">
                             <p className="text-[14px] font-medium leading-tight truncate">
                               {worker.name}

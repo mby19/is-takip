@@ -100,3 +100,46 @@ test("açık tema görüntüleri", async ({ page, db }) => {
   await page.getByRole("button", { name: "Ay Sonu" }).click();
   await shot("ay-sonu");
 });
+
+const CROWD = [
+  "Mehmet Demir",
+  "Murat Kaya",
+  "Hasan Çelik",
+  "Metin Aydın",
+  "Ali Yalçın",
+  "Osman Şahin",
+  "Emre Yıldız",
+  "Kadir Doğan",
+  "Salih Arslan",
+  "Bekir Koç",
+];
+
+/** Ekip büyüdükçe tablonun nasıl davrandığını görmek için. */
+for (const count of [6, 8, 10]) {
+  test(`yoğunluk ${count} kişi`, async ({ page, db }) => {
+    const rows = CROWD.slice(0, count)
+      .map((n, i) => `('${n}', ${700 + i * 50}, '${i % 4 === 1 ? "ORTAK" : "GUNLUK"}', 1)`)
+      .join(",");
+    db.exec(`INSERT INTO workers (name, daily_wage, worker_type, is_active) VALUES ${rows};`);
+    db.exec(`INSERT INTO worker_rate_history (worker_id, valid_from, daily_wage, worker_type)
+             SELECT id, '2000-01-01', daily_wage, worker_type FROM workers;`);
+    db.exec(`INSERT INTO daily_metrics (date, production_amount, total_earned, extra_expenses, is_holiday)
+             VALUES ('${d(3)}', 16, 11200, 600, 0), ('${d(8)}', 15, 10100, 500, 0);`);
+    const statuses = ["FULL", "FULL", "HALF", "ABSENT", "FULL", "HOLIDAY"];
+    for (let i = 1; i <= count; i++) {
+      db.exec(`INSERT INTO attendance (worker_id, date, status) VALUES
+        (${i}, '${d(3)}', '${statuses[i % statuses.length]}'),
+        (${i}, '${d(8)}', '${statuses[(i + 2) % statuses.length]}');`);
+    }
+
+    await page.goto("/");
+    await page.waitForTimeout(600);
+    await page.screenshot({ path: `shots/yogunluk-${count}.png` });
+
+    if (count === 6) {
+      await page.getByRole("button", { name: /Satır yüksekliği/ }).click();
+      await page.waitForTimeout(400);
+      await page.screenshot({ path: `shots/yogunluk-${count}-sikisik.png` });
+    }
+  });
+}

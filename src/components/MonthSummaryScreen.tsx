@@ -297,11 +297,7 @@ export function MonthSummaryScreen({ onWorkerClick }: MonthSummaryScreenProps) {
                       className="w-full flex items-center justify-between px-3.5 py-3 gap-3 text-left hover:bg-muted/40 active:bg-muted/60 transition-colors"
                     >
                       <div className="flex items-center gap-2.5 min-w-0">
-                        <WorkerAvatar
-                          name={worker.name}
-                          type={worker.worker_type}
-                          initials={initials.get(worker.id)}
-                        />
+                        <WorkerAvatar worker={worker} label={initials.get(worker.id)} />
                         <div className="min-w-0">
                           <p className="font-bold text-[13px] leading-tight truncate">
                             {worker.name}

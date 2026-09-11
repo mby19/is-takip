@@ -29,6 +29,8 @@ interface WorkerState {
     effectiveFrom?: string,
   ) => Promise<void>;
   updateWorkerStatus: (id: number, is_active: boolean) => Promise<void>;
+  /** Tablodaki görünüm: renk ve kısa etiket. Hesaplamayı etkilemez. */
+  updateAppearance: (id: number, color: string | null, shortLabel: string | null) => Promise<void>;
   archiveWorker: (id: number) => Promise<void>;
 }
 
@@ -116,6 +118,16 @@ export const useWorkerStore = create<WorkerState>((set, get) => ({
       set({ isLoading: false });
     } catch (error: unknown) {
       set({ error: error instanceof Error ? error.message : String(error), isLoading: false });
+      throw error;
+    }
+  },
+
+  updateAppearance: async (id: number, color: string | null, shortLabel: string | null) => {
+    try {
+      await workerRepository.updateAppearance(id, color, shortLabel);
+      await get().fetchWorkers();
+    } catch (error: unknown) {
+      set({ error: error instanceof Error ? error.message : String(error) });
       throw error;
     }
   },

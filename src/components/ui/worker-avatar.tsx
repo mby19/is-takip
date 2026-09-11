@@ -1,4 +1,5 @@
-import type { WorkerType } from "../../types";
+import type { Worker } from "../../types";
+import { resolveWorkerColor, WORKER_INK } from "../../lib/workerAppearance";
 
 const SIZES = {
   xs: "w-6 h-6 text-[11px]",
@@ -7,35 +8,37 @@ const SIZES = {
 } as const;
 
 /**
- * Çalışan avatarı: baş harf + tipe göre renk.
- * Tek yerde tanımlı, böylece listeler, gün sayfası ve detay ekranı ayrışmaz.
+ * Çalışan rozeti: kişiye özel renk + kısa etiket.
+ *
+ * Renk KİMLİĞİ gösterir, tipi değil — tabloda "hangi sütun kim" sorusunun en
+ * hızlı cevabı renktir. Tip bilgisi zaten ismin yanında yazıyor. Renk temaya
+ * göre değişmez; bir kişinin rengi sabittir.
  */
 export function WorkerAvatar({
-  name,
-  type,
+  worker,
   size = "sm",
-  initials,
+  label,
   className = "",
 }: {
-  name: string;
-  type: WorkerType;
+  worker: Pick<Worker, "id" | "name" | "color" | "short_label">;
   size?: keyof typeof SIZES;
   /**
-   * Ekip genelinde benzersizliği garanti edilmiş baş harf.
-   * Verilmezse ismin ilk harfi kullanılır — aynı harfle başlayan iki kişi
-   * olabilecek listelerde `workerInitials` ile hesaplanıp geçilmeli.
+   * Ekip genelinde benzersizliği garanti edilmiş etiket.
+   * Verilmezse çalışanın kendi kısa etiketi, o da yoksa ilk harfi kullanılır.
    */
-  initials?: string;
+  label?: string;
   className?: string;
 }) {
+  const text =
+    label ?? worker.short_label ?? worker.name.trim().charAt(0).toLocaleUpperCase("tr-TR") ?? "?";
+
   return (
     <span
       aria-hidden
-      className={`${SIZES[size]} rounded-full grid place-items-center font-semibold shrink-0 ${
-        type === "ORTAK" ? "bg-warn text-on-warn" : "bg-primary text-primary-foreground"
-      } ${className}`}
+      style={{ backgroundColor: resolveWorkerColor(worker), color: WORKER_INK }}
+      className={`${SIZES[size]} rounded-full grid place-items-center font-semibold shrink-0 ${className}`}
     >
-      {initials ?? name.trim().charAt(0).toLocaleUpperCase("tr-TR")}
+      {text}
     </span>
   );
 }

@@ -28,5 +28,12 @@ export const workerRepository = {
   updateStatus: (id: number, is_active: boolean) =>
     executeQuery("UPDATE workers SET is_active = ? WHERE id = ?", [is_active ? 1 : 0, id]),
 
+  updateAppearance: (id: number, color: string | null, short_label: string | null) =>
+    executeQuery("UPDATE workers SET color = ?, short_label = ? WHERE id = ?", [
+      color,
+      short_label,
+      id,
+    ]),
+
   archive: (id: number) => executeQuery("UPDATE workers SET is_active = 0 WHERE id = ?", [id]),
 };

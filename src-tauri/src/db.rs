@@ -478,6 +478,17 @@ ALTER TABLE audit_logs ADD COLUMN reverted_at DATETIME;
             kind: MigrationKind::Up,
         },
         Migration {
+            version: 13,
+            description: "worker_appearance",
+            sql: "
+-- Tabloda kisiyi ayirt etmek icin: kullanicinin sectigi renk ve kisa etiket.
+-- Ikisi de NULL olabilir; bos birakilirsa uygulama otomatik uretir.
+ALTER TABLE workers ADD COLUMN color TEXT;
+ALTER TABLE workers ADD COLUMN short_label TEXT;
+",
+            kind: MigrationKind::Up,
+        },
+        Migration {
             version: 12,
             description: "closed_periods",
             sql: "

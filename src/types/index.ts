@@ -11,6 +11,10 @@ export interface Worker {
   worker_type: WorkerType;
   created_at: string;
   is_active: boolean;
+  /** Tabloda ayırt etmek için seçilen renk anahtarı. Boşsa id'den türetilir. */
+  color?: string | null;
+  /** Tabloda gösterilen kısa etiket. Boşsa baş harflerden üretilir. */
+  short_label?: string | null;
 }
 
 /**

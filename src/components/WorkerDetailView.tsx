@@ -27,6 +27,16 @@ import { exportWorkerReport } from "../lib/workerReport";
 import { DetailSkeleton } from "./ui/skeleton";
 import { WorkerAvatar } from "./ui/worker-avatar";
 import {
+  WORKER_COLORS,
+  WORKER_COLOR_KEYS,
+  WORKER_COLOR_NAMES,
+  WORKER_INK,
+  SHORT_LABEL_MAX,
+  resolveWorkerColorKey,
+  normalizeShortLabel,
+  type WorkerColorKey,
+} from "../lib/workerAppearance";
+import {
   Dialog,
   DialogContent,
   DialogHeader,
@@ -58,6 +68,7 @@ export function WorkerDetailView({ worker, onBack }: WorkerDetailViewProps) {
   const archiveWorker = useWorkerStore((s) => s.archiveWorker);
   const updateWorker = useWorkerStore((s) => s.updateWorker);
   const updateWorkerStatus = useWorkerStore((s) => s.updateWorkerStatus);
+  const updateAppearance = useWorkerStore((s) => s.updateAppearance);
 
   const addToast = useToastStore((s) => s.addToast);
 
@@ -84,11 +95,15 @@ export function WorkerDetailView({ worker, onBack }: WorkerDetailViewProps) {
   const [editWage, setEditWage] = useState(worker.daily_wage.toString());
   const [editType, setEditType] = useState(worker.worker_type);
   const [effectiveFrom, setEffectiveFrom] = useState(todayStr());
+  const [editColor, setEditColor] = useState<WorkerColorKey>(() => resolveWorkerColorKey(worker));
+  const [editLabel, setEditLabel] = useState(worker.short_label ?? "");
 
   useEffect(() => {
     setEditName(worker.name);
     setEditWage(worker.daily_wage.toString());
     setEditType(worker.worker_type);
+    setEditColor(resolveWorkerColorKey(worker));
+    setEditLabel(worker.short_label ?? "");
   }, [worker]);
 
   const reloadData = useCallback(async () => {
@@ -185,7 +200,7 @@ export function WorkerDetailView({ worker, onBack }: WorkerDetailViewProps) {
         >
           <ArrowLeft className="w-5 h-5" />
         </button>
-        <WorkerAvatar name={worker.name} type={worker.worker_type} size="md" />
+        <WorkerAvatar worker={worker} size="md" />
         <div className="min-w-0 flex-1">
           <h1 className="text-[17px] font-semibold tracking-tight truncate">
             {worker.name}{" "}
@@ -274,6 +289,54 @@ export function WorkerDetailView({ worker, onBack }: WorkerDetailViewProps) {
               </div>
             </div>
 
+            {/* Tablodaki görünüm — hesaplamayı etkilemez, sadece tanımayı hızlandırır */}
+            <div className="space-y-2">
+              <Label className="text-[11px] font-medium text-muted-foreground ml-1">
+                Tablodaki görünüm
+              </Label>
+
+              <div className="flex items-center gap-3">
+                <span
+                  style={{ backgroundColor: WORKER_COLORS[editColor], color: WORKER_INK }}
+                  className="w-10 h-10 rounded-full grid place-items-center text-[15px] font-semibold shrink-0"
+                >
+                  {normalizeShortLabel(editLabel) ||
+                    editName.trim().charAt(0).toLocaleUpperCase("tr-TR") ||
+                    "?"}
+                </span>
+                <Input
+                  value={editLabel}
+                  maxLength={SHORT_LABEL_MAX}
+                  onChange={(e) => setEditLabel(normalizeShortLabel(e.target.value))}
+                  placeholder="Otomatik"
+                  aria-label="Kısa etiket"
+                  className="h-10 rounded-control border bg-muted/30 font-semibold text-center tracking-wider"
+                />
+              </div>
+              <p className="text-[11px] text-muted-foreground ml-1 leading-relaxed">
+                Boş bırakırsanız baş harflerden üretilir ve ekipte benzersiz olması sağlanır.
+              </p>
+
+              <div className="grid grid-cols-9 gap-1.5 pt-1">
+                {WORKER_COLOR_KEYS.map((key) => (
+                  <button
+                    key={key}
+                    type="button"
+                    onClick={() => setEditColor(key)}
+                    aria-label={WORKER_COLOR_NAMES[key]}
+                    aria-pressed={editColor === key}
+                    title={WORKER_COLOR_NAMES[key]}
+                    style={{ backgroundColor: WORKER_COLORS[key] }}
+                    className={`aspect-square rounded-full transition-transform active:scale-90 ${
+                      editColor === key
+                        ? "ring-2 ring-offset-2 ring-foreground ring-offset-background scale-110"
+                        : ""
+                    }`}
+                  />
+                ))}
+              </div>
+            </div>
+
             {/* Ücret/tip değişikliği tarih etkilidir — geçmiş aylar korunur. */}
             {wageOrTypeChanged && (
               <div className="space-y-1.5 animate-slide-up">
@@ -343,6 +406,11 @@ export function WorkerDetailView({ worker, onBack }: WorkerDetailViewProps) {
                     parseFloat(editWage) || 0,
                     editType,
                     effectiveFrom,
+                  );
+                  await updateAppearance(
+                    worker.id,
+                    editColor,
+                    normalizeShortLabel(editLabel) || null,
                   );
                   setIsEditOpen(false);
                   addToast("Çalışan bilgileri güncellendi", "success");

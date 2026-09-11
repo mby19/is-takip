@@ -9,7 +9,7 @@ import {
   isSameWeek,
 } from "date-fns";
 import { tr } from "date-fns/locale";
-import { Check, Minus, X, Palmtree, Users, Archive, Repeat } from "lucide-react";
+import { Check, Minus, X, Palmtree, Users, Archive, Repeat, Rows3, Rows4 } from "lucide-react";
 import { useWorkerStore } from "../stores/workerStore";
 import { useAttendanceStore } from "../stores/attendanceStore";
 import { useMetricsStore } from "../stores/metricsStore";
@@ -58,6 +58,22 @@ const METRICS = [
 ] as const;
 type MetricKey = (typeof METRICS)[number]["key"];
 
+/**
+ * Satır yoğunluğu. Asıl kıt kaynak yatay değil dikey yer: 6 kişilik ekipte
+ * sütunlar rahat sığıyor ama ekrana ayın yarısı bile girmiyor.
+ */
+const DENSITY = {
+  normal: { row: "h-11", chip: "w-7 h-7", icon: "w-4 h-4", label: "Normal", icon_: Rows3 },
+  compact: {
+    row: "h-[34px]",
+    chip: "w-6 h-6",
+    icon: "w-3.5 h-3.5",
+    label: "Sıkışık",
+    icon_: Rows4,
+  },
+} as const;
+type DensityKey = keyof typeof DENSITY;
+
 /** Gün ve sağ sütun sabit; kişi sütunları kalan yeri paylaşır. */
 const COL = { day: "3.25rem", side: "4.5rem" };
 const WORKER_CELL: React.CSSProperties = { flex: "1 0 2.5rem", minWidth: "2.5rem" };
@@ -68,7 +84,13 @@ const compactMoney = (n: number) => {
   return String(Math.round(n));
 };
 
-function StatusMark({ status }: { status?: AttendanceStatus | null }) {
+function StatusMark({
+  status,
+  density,
+}: {
+  status?: AttendanceStatus | null;
+  density: (typeof DENSITY)[DensityKey];
+}) {
   const style = status ? STATUS_STYLE[status] : undefined;
 
   // Boş gün gürültü yapmasın: ince bir nokta yeter.
@@ -76,8 +98,8 @@ function StatusMark({ status }: { status?: AttendanceStatus | null }) {
 
   const Icon = style.icon;
   return (
-    <span className={`w-7 h-7 rounded-[0.6rem] grid place-items-center ${style.chip}`}>
-      <Icon className="w-4 h-4" strokeWidth={2.75} />
+    <span className={`${density.chip} rounded-[0.6rem] grid place-items-center ${style.chip}`}>
+      <Icon className={density.icon} strokeWidth={2.75} />
     </span>
   );
 }
@@ -93,6 +115,7 @@ const CalendarRow = memo(function CalendarRow({
   workers,
   attendanceMap,
   readOnly,
+  density,
   onDayClick,
   onCellTap,
   rowRef,
@@ -107,6 +130,7 @@ const CalendarRow = memo(function CalendarRow({
   workers: readonly Worker[];
   attendanceMap: Record<string, Attendance>;
   readOnly: boolean;
+  density: (typeof DENSITY)[DensityKey];
   onDayClick: (date: string) => void;
   onCellTap: (worker: Worker, dateStr: string, current: AttendanceStatus | null) => void;
   rowRef?: (el: HTMLDivElement | null) => void;
@@ -116,7 +140,11 @@ const CalendarRow = memo(function CalendarRow({
   const rowTone = today ? "bg-row-today" : isWeekend ? "bg-row-weekend" : "bg-background";
 
   return (
-    <div ref={rowRef} data-date={dateStr} className={`flex h-11 items-stretch ${rowTone}`}>
+    <div
+      ref={rowRef}
+      data-date={dateStr}
+      className={`flex ${density.row} items-stretch ${rowTone}`}
+    >
       <button
         type="button"
         onClick={() => onDayClick(dateStr)}
@@ -144,7 +172,7 @@ const CalendarRow = memo(function CalendarRow({
             style={WORKER_CELL}
             className="flex items-center justify-center border-b border-border/40 active:scale-90 transition-transform disabled:active:scale-100 hover:bg-muted/40 disabled:hover:bg-transparent"
           >
-            <StatusMark status={status} />
+            <StatusMark status={status} density={density} />
           </button>
         );
       })}
@@ -182,6 +210,16 @@ export function CalendarView({ currentDate, onDayClick, onWorkerClick }: Calenda
 
   const isLoading = workersLoading || attLoading || metricsLoading;
   const isClosed = closedPeriods.some((c) => c.period === periodOfDate(currentDate));
+
+  const [density, setDensity] = useState<DensityKey>(() =>
+    localStorage.getItem("calendar-density") === "compact" ? "compact" : "normal",
+  );
+
+  const toggleDensity = () => {
+    const next: DensityKey = density === "normal" ? "compact" : "normal";
+    setDensity(next);
+    localStorage.setItem("calendar-density", next);
+  };
 
   const [sideMetric, setSideMetric] = useState<MetricKey>(() => {
     const saved = localStorage.getItem("calendar-side-metric");
@@ -242,6 +280,13 @@ export function CalendarView({ currentDate, onDayClick, onWorkerClick }: Calenda
     return () => clearTimeout(timer);
   }, [currentDate, daysInMonth.length, activeWorkers.length]);
 
+  /**
+   * Kaç kişi sütunu ekranın sağında kalıyor.
+   * Ekip büyüdüğünde sütunlar sabit palet sütununun arkasında sessizce
+   * kayboluyordu; kullanıcı birinin eksik olduğunu fark etmiyordu.
+   */
+  const [hiddenCount, setHiddenCount] = useState(0);
+
   // Başlık satırı gövdeyle birlikte yatay kayar (kalabalık ekipte gerekir).
   useEffect(() => {
     const scrollView = scrollRef.current;
@@ -250,7 +295,12 @@ export function CalendarView({ currentDate, onDayClick, onWorkerClick }: Calenda
 
     const sync = () => {
       headerView.scrollLeft = scrollView.scrollLeft;
+      // Taşma varken kişi sütunları tabana (40px) oturmuş olur.
+      const remaining = scrollView.scrollWidth - scrollView.clientWidth - scrollView.scrollLeft;
+      setHiddenCount(remaining > 4 ? Math.round(remaining / 40) : 0);
     };
+    sync();
+
     scrollView.addEventListener("scroll", sync, { passive: true });
     const observer = new ResizeObserver(sync);
     observer.observe(scrollView);
@@ -258,7 +308,7 @@ export function CalendarView({ currentDate, onDayClick, onWorkerClick }: Calenda
       scrollView.removeEventListener("scroll", sync);
       observer.disconnect();
     };
-  }, []);
+  }, [activeWorkers.length]);
 
   const attendanceMap = useMemo(() => {
     const map: Record<string, Attendance> = {};
@@ -433,13 +483,24 @@ export function CalendarView({ currentDate, onDayClick, onWorkerClick }: Calenda
         </div>
       )}
 
-      <div className="flex justify-center gap-4 py-1.5 bg-surface text-[11px] text-muted-foreground shrink-0">
-        {STATUS_ORDER.map((s) => (
-          <span key={s} className="flex items-center gap-1.5">
-            <span className={`w-1.5 h-1.5 rounded-full ${STATUS_STYLE[s].dot}`} />
-            {STATUS_STYLE[s].label}
-          </span>
-        ))}
+      <div className="flex items-center gap-4 px-3 py-1 bg-surface text-[11px] text-muted-foreground shrink-0">
+        <div className="flex-1 flex justify-center gap-4">
+          {STATUS_ORDER.map((s) => (
+            <span key={s} className="flex items-center gap-1.5">
+              <span className={`w-1.5 h-1.5 rounded-full ${STATUS_STYLE[s].dot}`} />
+              {STATUS_STYLE[s].label}
+            </span>
+          ))}
+        </div>
+        <button
+          type="button"
+          onClick={toggleDensity}
+          aria-label={`Satır yüksekliği: ${DENSITY[density].label}. Değiştirmek için dokunun.`}
+          title={`Satır yüksekliği: ${DENSITY[density].label}`}
+          className="shrink-0 w-7 h-7 rounded-lg grid place-items-center hover:bg-muted hover:text-foreground active:scale-90 transition-all"
+        >
+          {density === "normal" ? <Rows3 className="w-4 h-4" /> : <Rows4 className="w-4 h-4" />}
+        </button>
       </div>
 
       {/* Tablo başlığı — isim yerine baş harf, yer kazandırır */}
@@ -461,12 +522,7 @@ export function CalendarView({ currentDate, onDayClick, onWorkerClick }: Calenda
               style={WORKER_CELL}
               className="py-1.5 grid place-items-center active:scale-90 transition-transform"
             >
-              <WorkerAvatar
-                name={w.name}
-                type={w.worker_type}
-                size="xs"
-                initials={initials.get(w.id)}
-              />
+              <WorkerAvatar worker={w} size="xs" label={initials.get(w.id)} />
             </button>
           ))}
           <button
@@ -481,6 +537,12 @@ export function CalendarView({ currentDate, onDayClick, onWorkerClick }: Calenda
           </button>
         </div>
       </div>
+
+      {hiddenCount > 0 && (
+        <div className="px-4 py-1 bg-warn-soft text-warn text-[11px] font-medium flex items-center justify-center gap-1.5 shrink-0">
+          Sağda {hiddenCount} kişi daha var — tabloyu yana kaydırın
+        </div>
+      )}
 
       {archivedWithData.length > 0 && (
         <div className="px-4 py-1 bg-surface text-[11px] text-muted-foreground flex items-center justify-center gap-1.5 shrink-0 border-b border-border/60">
@@ -526,6 +588,7 @@ export function CalendarView({ currentDate, onDayClick, onWorkerClick }: Calenda
                   workers={activeWorkers}
                   attendanceMap={attendanceMap}
                   readOnly={isClosed}
+                  density={DENSITY[density]}
                   onDayClick={onDayClick}
                   onCellTap={handleCellTap}
                   rowRef={
