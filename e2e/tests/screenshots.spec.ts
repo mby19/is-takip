@@ -50,7 +50,10 @@ test("ekran görüntüleri", async ({ page, db }) => {
   await page.goto("/");
   await shot("01-takvim");
 
-  await page.locator(`[data-date="${d(3)}"]`).click();
+  await page
+    .locator(`[data-date="${d(3)}"] button`)
+    .first()
+    .click();
   await shot("02-gun-detay");
   await page.getByRole("button", { name: "İptal" }).click();
 
@@ -87,7 +90,10 @@ test("açık tema görüntüleri", async ({ page, db }) => {
   await page.goto("/");
   await shot("takvim");
 
-  await page.locator(`[data-date="${d(3)}"]`).click();
+  await page
+    .locator(`[data-date="${d(3)}"] button`)
+    .first()
+    .click();
   await shot("gun-detay");
   await page.getByRole("button", { name: "İptal" }).click();
 

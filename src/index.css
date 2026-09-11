@@ -85,6 +85,15 @@
   --color-surface: var(--surface);
   --color-raised: var(--raised);
 
+  /*
+   * Takvim satır zeminleri KATI renktir, saydam değil.
+   * Sabitlenmiş (sticky) sütunlar satırla aynı sınıfı kullanıyor; saydam olsalar
+   * hem alfa üst üste binerdi hem de yatay kaydırmada altlarındaki içerik
+   * görünürdü.
+   */
+  --color-row-today: var(--row-today);
+  --color-row-weekend: var(--row-weekend);
+
   --radius-control: 0.75rem;
   --radius-card: 1rem;
   --radius-sheet: 1.5rem;
@@ -123,12 +132,18 @@
     /* Yüzeyler: zemin → yüzey → yükseltilmiş */
     --surface: var(--card);
     --raised: var(--card);
+
+    --row-today: color-mix(in oklab, var(--primary) 10%, var(--background));
+    --row-weekend: color-mix(in oklab, var(--muted) 55%, var(--background));
   }
 
   .dark {
     /* Koyu temada ayrım kenarlıkla değil yükseklikle yapılır. */
     --surface: color-mix(in oklab, var(--card) 94%, var(--foreground) 6%);
     --raised: color-mix(in oklab, var(--card) 86%, var(--foreground) 14%);
+
+    --row-today: color-mix(in oklab, var(--primary) 16%, var(--background));
+    --row-weekend: color-mix(in oklab, var(--muted) 60%, var(--background));
 
     --ok: hsl(158 55% 55%);
     --ok-soft: hsl(160 35% 15%);

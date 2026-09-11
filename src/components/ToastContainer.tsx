@@ -1,28 +1,28 @@
 import { useState, useEffect } from "react";
 import { createPortal } from "react-dom";
-import { useToastStore } from "../stores/toastStore";
+import { useToastStore, type Toast } from "../stores/toastStore";
 import { X } from "lucide-react";
 
 function ToastItem({
   id,
   message,
   type,
+  action,
   onRemove,
-}: {
-  id: string;
-  message: string;
-  type: "success" | "error" | "info";
-  onRemove: (id: string) => void;
-}) {
+}: Toast & { onRemove: (id: string) => void }) {
   const [exiting, setExiting] = useState(false);
 
   useEffect(() => {
-    const timer = setTimeout(() => {
-      setExiting(true);
-      setTimeout(() => onRemove(id), 300);
-    }, 3500);
+    // Eylemli bildirim daha uzun durur: kullanıcının karar verecek vakti olmalı.
+    const timer = setTimeout(
+      () => {
+        setExiting(true);
+        setTimeout(() => onRemove(id), 300);
+      },
+      action ? 5800 : 3500,
+    );
     return () => clearTimeout(timer);
-  }, [id, onRemove]);
+  }, [id, onRemove, action]);
 
   const iconMap = {
     success: (
@@ -71,21 +71,33 @@ function ToastItem({
       data-exiting={exiting ? "true" : undefined}
       onClick={dismiss}
       className={`
- pointer-events-auto flex items-center gap-2.5 px-4 py-3 rounded-card shadow-2xl text-sm font-bold cursor-pointer
+ pointer-events-auto flex items-center gap-2.5 px-4 py-3 rounded-card shadow-2xl text-[13px] font-medium cursor-pointer
  transition-all duration-300 ease-out active:scale-95
         ${exiting ? "opacity-0 translate-y-2 scale-95" : "opacity-100 translate-y-0 scale-100"}
         ${
           type === "success"
-            ? "bg-emerald-600 text-white"
+            ? "bg-ok text-white"
             : type === "error"
-              ? "bg-rose-600 text-white"
-              : "bg-gray-800 text-white dark:bg-gray-200 dark:text-gray-900"
+              ? "bg-bad text-white"
+              : "bg-foreground text-background"
         }
       `}
       role="alert"
     >
       {iconMap[type]}
       <span className="flex-1">{message}</span>
+      {action && (
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            void action.onClick();
+            dismiss();
+          }}
+          className="shrink-0 px-2.5 h-8 rounded-lg bg-white/20 hover:bg-white/30 text-[13px] font-semibold active:scale-95 transition-all"
+        >
+          {action.label}
+        </button>
+      )}
       <button
         onClick={(e) => {
           e.stopPropagation();
@@ -109,7 +121,7 @@ export function ToastContainer() {
     <div className="fixed bottom-25 left-1/2 -translate-x-1/2 z-9999 flex flex-col gap-2 w-[90vw] max-w-sm pointer-events-none">
       {toasts.map((t, i) => (
         <div key={t.id} className="animate-slide-up" style={{ animationDelay: `${i * 60}ms` }}>
-          <ToastItem id={t.id} message={t.message} type={t.type} onRemove={removeToast} />
+          <ToastItem {...t} onRemove={removeToast} />
         </div>
       ))}
     </div>,

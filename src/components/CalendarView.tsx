@@ -1,11 +1,20 @@
-import { useEffect, useMemo, useRef, memo } from "react";
-import { format, startOfMonth, endOfMonth, eachDayOfInterval, isToday, getDay } from "date-fns";
+import { useEffect, useMemo, useRef, useState, useCallback, memo } from "react";
+import {
+  format,
+  startOfMonth,
+  endOfMonth,
+  eachDayOfInterval,
+  isToday,
+  getDay,
+  isSameWeek,
+} from "date-fns";
 import { tr } from "date-fns/locale";
-import { Check, Minus, X, Palmtree, Users, Archive } from "lucide-react";
+import { Check, Minus, X, Palmtree, Users, Archive, Repeat } from "lucide-react";
 import { useWorkerStore } from "../stores/workerStore";
 import { useAttendanceStore } from "../stores/attendanceStore";
 import { useMetricsStore } from "../stores/metricsStore";
 import { usePeriodStore } from "../stores/periodStore";
+import { useToastStore } from "../stores/toastStore";
 import { TableSkeleton } from "./ui/skeleton";
 import type { DailyMetric, Attendance, Worker, AttendanceStatus } from "../types";
 import { calculateDailyEarnings, rateResolverFor } from "../utils/earningsCalculator";
@@ -18,7 +27,7 @@ interface CalendarViewProps {
   onWorkerClick?: (worker: Worker) => void;
 }
 
-/** Lejant ile hücreler aynı kaynaktan beslenir — renkler ayrışamaz. */
+/** Lejant, hücreler ve gün sayfası aynı kaynaktan beslenir. */
 const STATUS_STYLE: Record<
   AttendanceStatus,
   { label: string; chip: string; dot: string; icon: typeof Check }
@@ -29,17 +38,35 @@ const STATUS_STYLE: Record<
   HOLIDAY: { label: "İzin", chip: "bg-info-soft text-info", dot: "bg-info", icon: Palmtree },
 };
 
+/**
+ * Hücreye dokununca izlenen sıra. Doğal azalan düzende: tam gün tek dokunuş
+ * uzakta (vakaların çoğu), son dokunuş kaydı temizler.
+ */
+const CYCLE: (AttendanceStatus | null)[] = ["FULL", "HALF", "ABSENT", "HOLIDAY", null];
+const nextStatus = (current: AttendanceStatus | null): AttendanceStatus | null =>
+  CYCLE[(CYCLE.indexOf(current) + 1) % CYCLE.length];
+
 const STATUS_ORDER: AttendanceStatus[] = ["FULL", "HALF", "ABSENT", "HOLIDAY"];
 
-/**
- * Sütun ölçüleri tek yerde. Kişi sütunları boş alanı paylaşır (az kişide
- * genişler), kalabalık ekipte minimumda kalıp yatay kaydırmaya bırakır.
- * Gün ve palet sütunları kenarlara sabitlenir.
- */
-const COL = { day: "3.25rem", prod: "4.25rem" };
-const WORKER_CELL: React.CSSProperties = { flex: "1 0 3.5rem", minWidth: "3.5rem" };
+/** Sağ sütunun gösterebileceği ölçüler. */
+const METRICS = [
+  { key: "production", label: "Palet" },
+  { key: "revenue", label: "Ciro" },
+  { key: "profit", label: "Net kâr" },
+] as const;
+type MetricKey = (typeof METRICS)[number]["key"];
 
-function StatusCell({ status }: { status?: AttendanceStatus }) {
+/** Gün ve sağ sütun sabit; kişi sütunları kalan yeri paylaşır. */
+const COL = { day: "3.25rem", side: "4.5rem" };
+const WORKER_CELL: React.CSSProperties = { flex: "1 0 2.5rem", minWidth: "2.5rem" };
+
+const compactMoney = (n: number) => {
+  const abs = Math.abs(n);
+  if (abs >= 1000) return `${n < 0 ? "-" : ""}${Math.round(abs / 1000)}b`;
+  return String(Math.round(n));
+};
+
+function StatusMark({ status }: { status?: AttendanceStatus | null }) {
   const style = status ? STATUS_STYLE[status] : undefined;
 
   // Boş gün gürültü yapmasın: ince bir nokta yeter.
@@ -47,10 +74,7 @@ function StatusCell({ status }: { status?: AttendanceStatus }) {
 
   const Icon = style.icon;
   return (
-    <span
-      className={`w-7 h-7 rounded-[0.6rem] flex items-center justify-center ${style.chip}`}
-      title={style.label}
-    >
+    <span className={`w-7 h-7 rounded-[0.6rem] grid place-items-center ${style.chip}`}>
       <Icon className="w-4 h-4" strokeWidth={2.75} />
     </span>
   );
@@ -63,10 +87,12 @@ const CalendarRow = memo(function CalendarRow({
   label,
   isWeekend,
   today,
-  metric,
+  sideValue,
   workers,
   attendanceMap,
+  readOnly,
   onDayClick,
+  onCellTap,
   rowRef,
 }: {
   dateStr: string;
@@ -75,70 +101,65 @@ const CalendarRow = memo(function CalendarRow({
   label: string;
   isWeekend: boolean;
   today: boolean;
-  metric: DailyMetric | undefined;
+  sideValue: string | null;
   workers: readonly Worker[];
   attendanceMap: Record<string, Attendance>;
+  readOnly: boolean;
   onDayClick: (date: string) => void;
+  onCellTap: (worker: Worker, dateStr: string, current: AttendanceStatus | null) => void;
   rowRef?: (el: HTMLDivElement | null) => void;
 }) {
-  const production = metric?.production_amount ?? 0;
+  // Satır ve sabit sütunlar AYNI katı zemini kullanır; böylece hiçbir durumda
+  // iki tonlu görünmez ve yatay kaydırmada altları görünmez.
+  const rowTone = today ? "bg-row-today" : isWeekend ? "bg-row-weekend" : "bg-background";
 
   return (
-    <div
-      ref={rowRef}
-      role="button"
-      tabIndex={0}
-      data-date={dateStr}
-      aria-label={label}
-      onClick={() => onDayClick(dateStr)}
-      onKeyDown={(e) => {
-        if (e.key === "Enter" || e.key === " ") {
-          e.preventDefault();
-          onDayClick(dateStr);
-        }
-      }}
-      className={`group flex h-11 items-stretch cursor-pointer transition-colors focus-visible:outline-2 focus-visible:outline-primary focus-visible:-outline-offset-2 ${
-        today ? "bg-primary/10" : isWeekend ? "bg-muted/40" : "hover:bg-muted/30"
-      }`}
-    >
-      {/* Gün — sola sabit */}
-      <div
+    <div ref={rowRef} data-date={dateStr} className={`flex h-11 items-stretch ${rowTone}`}>
+      <button
+        type="button"
+        onClick={() => onDayClick(dateStr)}
+        aria-label={`${label} gününü aç`}
         style={{ width: COL.day }}
-        className={`shrink-0 sticky left-0 z-20 flex items-center justify-center gap-1 border-b border-r border-border/50 ${
-          today ? "bg-primary text-primary-foreground" : isWeekend ? "bg-muted/60" : "bg-surface"
+        className={`shrink-0 sticky left-0 z-20 flex items-center justify-center gap-1 border-b border-r border-border/50 active:scale-95 transition-transform ${
+          today ? "bg-primary text-primary-foreground" : rowTone
         }`}
       >
         <span className="text-[13px] font-semibold tabular-nums leading-none">{dayNum}</span>
         <span className={`text-[10px] leading-none ${today ? "opacity-80" : "opacity-55"}`}>
           {dayName}
         </span>
-      </div>
+      </button>
 
-      {workers.map((w) => (
-        <div
-          key={w.id}
-          style={WORKER_CELL}
-          className="flex items-center justify-center border-b border-border/40"
-        >
-          <StatusCell status={attendanceMap[`${dateStr}-${w.id}`]?.status} />
-        </div>
-      ))}
+      {workers.map((w) => {
+        const status = attendanceMap[`${dateStr}-${w.id}`]?.status ?? null;
+        return (
+          <button
+            key={w.id}
+            type="button"
+            disabled={readOnly}
+            onClick={() => onCellTap(w, dateStr, status)}
+            aria-label={`${w.name}, ${label}: ${status ? STATUS_STYLE[status].label : "kayıt yok"}`}
+            style={WORKER_CELL}
+            className="flex items-center justify-center border-b border-border/40 active:scale-90 transition-transform disabled:active:scale-100 hover:bg-muted/40 disabled:hover:bg-transparent"
+          >
+            <StatusMark status={status} />
+          </button>
+        );
+      })}
 
-      {/* Palet — sağa sabit, hiçbir zaman ekran dışında kalmaz */}
-      <div
-        style={{ width: COL.prod }}
-        className={`shrink-0 sticky right-0 z-20 ml-auto flex items-center justify-center border-b border-l border-border/50 ${
-          today ? "bg-primary/10" : isWeekend ? "bg-muted/60" : "bg-surface"
-        }`}
+      <button
+        type="button"
+        onClick={() => onDayClick(dateStr)}
+        aria-label={`${label} gününün verilerini düzenle`}
+        style={{ width: COL.side }}
+        className={`shrink-0 sticky right-0 z-20 flex items-center justify-center border-b border-l border-border/50 active:scale-95 transition-transform ${rowTone}`}
       >
-        {production > 0 ? (
-          <span className="text-[13px] font-semibold tabular-nums text-primary">{production}</span>
+        {sideValue ? (
+          <span className="text-[13px] font-semibold tabular-nums text-primary">{sideValue}</span>
         ) : (
-          <span className="text-base text-muted-foreground/40 leading-none group-hover:text-primary transition-colors">
-            +
-          </span>
+          <span className="text-base text-muted-foreground/40 leading-none">+</span>
         )}
-      </div>
+      </button>
     </div>
   );
 });
@@ -149,14 +170,27 @@ export function CalendarView({ currentDate, onDayClick, onWorkerClick }: Calenda
   const workersLoading = useWorkerStore((s) => s.isLoading);
   const attendances = useAttendanceStore((s) => s.attendances);
   const fetchAttendanceByDateRange = useAttendanceStore((s) => s.fetchAttendanceByDateRange);
+  const markAttendance = useAttendanceStore((s) => s.markAttendance);
   const attLoading = useAttendanceStore((s) => s.isLoading);
   const metrics = useMetricsStore((s) => s.metrics);
   const fetchMetricsByDateRange = useMetricsStore((s) => s.fetchMetricsByDateRange);
   const metricsLoading = useMetricsStore((s) => s.isLoading);
   const closedPeriods = usePeriodStore((s) => s.closed);
+  const addToast = useToastStore((s) => s.addToast);
 
   const isLoading = workersLoading || attLoading || metricsLoading;
   const isClosed = closedPeriods.some((c) => c.period === periodOfDate(currentDate));
+
+  const [sideMetric, setSideMetric] = useState<MetricKey>(() => {
+    const saved = localStorage.getItem("calendar-side-metric");
+    return METRICS.some((m) => m.key === saved) ? (saved as MetricKey) : "production";
+  });
+
+  const cycleSideMetric = () => {
+    const next = METRICS[(METRICS.findIndex((m) => m.key === sideMetric) + 1) % METRICS.length].key;
+    setSideMetric(next);
+    localStorage.setItem("calendar-side-metric", next);
+  };
 
   const headerRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -202,7 +236,7 @@ export function CalendarView({ currentDate, onDayClick, onWorkerClick }: Calenda
     return () => clearTimeout(timer);
   }, [currentDate, daysInMonth.length, activeWorkers.length]);
 
-  // Başlık satırı gövdeyle birlikte yatay kayar.
+  // Başlık satırı gövdeyle birlikte yatay kayar (kalabalık ekipte gerekir).
   useEffect(() => {
     const scrollView = scrollRef.current;
     const headerView = headerRef.current;
@@ -236,8 +270,8 @@ export function CalendarView({ currentDate, onDayClick, onWorkerClick }: Calenda
     return map;
   }, [metrics]);
 
-  /** Ay özeti: ciro ham gelir, net kâr gider ve yevmiyeler düşülmüş hâli. */
-  const stats = useMemo(() => {
+  /** Gün başına net kâr — sağ sütun ve hafta toplamları için. */
+  const profitByDate = useMemo(() => {
     const byDate = new Map<string, Attendance[]>();
     for (const a of attendances) {
       const key = String(a.date).trim();
@@ -246,19 +280,13 @@ export function CalendarView({ currentDate, onDayClick, onWorkerClick }: Calenda
       else byDate.set(key, [a]);
     }
 
-    let production = 0;
-    let revenue = 0;
-    let netProfit = 0;
-
+    const map: Record<string, number> = {};
     for (const metric of metrics) {
       const dateStr = String(metric.date).trim();
-      production += metric.production_amount || 0;
-      revenue += metric.total_earned || 0;
-
       const statusMap: Record<number, AttendanceStatus | null> = {};
       for (const a of byDate.get(dateStr) ?? []) statusMap[Number(a.worker_id)] = a.status;
 
-      netProfit += calculateDailyEarnings(
+      map[dateStr] = calculateDailyEarnings(
         calcWorkers,
         statusMap,
         metric.total_earned || 0,
@@ -266,13 +294,82 @@ export function CalendarView({ currentDate, onDayClick, onWorkerClick }: Calenda
         rateResolverFor(dateStr, rateHistory),
       ).netProfit;
     }
-
-    return { production, revenue, netProfit };
+    return map;
   }, [metrics, attendances, calcWorkers, rateHistory]);
+
+  const stats = useMemo(() => {
+    let production = 0;
+    let revenue = 0;
+    for (const m of metrics) {
+      production += m.production_amount || 0;
+      revenue += m.total_earned || 0;
+    }
+    const netProfit = Object.values(profitByDate).reduce((sum, v) => sum + v, 0);
+    return { production, revenue, netProfit };
+  }, [metrics, profitByDate]);
 
   const animProduction = useAnimatedCounter(stats.production, "palet");
   const animRevenue = useAnimatedCounter(Math.round(stats.revenue), "revenue");
   const animProfit = useAnimatedCounter(Math.round(stats.netProfit), "profit");
+
+  const sideValueFor = useCallback(
+    (dateStr: string): string | null => {
+      const metric = metricsMap[dateStr];
+      if (!metric) return null;
+      if (sideMetric === "production")
+        return metric.production_amount > 0 ? String(metric.production_amount) : null;
+      if (sideMetric === "revenue")
+        return metric.total_earned > 0 ? compactMoney(metric.total_earned) : null;
+      const profit = profitByDate[dateStr];
+      return profit ? compactMoney(profit) : null;
+    },
+    [metricsMap, sideMetric, profitByDate],
+  );
+
+  /**
+   * Hücreye dokunulduğunda durum bir sonrakine geçer ve ANINDA yazılır.
+   * Kâğıt puantajdaki "kutuyu işaretle" hareketinin karşılığı; bordro kaydı
+   * olduğu için her değişiklik geri alınabilir bir bildirimle bildirilir.
+   */
+  const handleCellTap = useCallback(
+    async (worker: Worker, dateStr: string, current: AttendanceStatus | null) => {
+      const next = nextStatus(current);
+      try {
+        await markAttendance(worker.id, dateStr, next);
+        const label = next ? STATUS_STYLE[next].label.toLocaleLowerCase("tr-TR") : "temizlendi";
+        addToast(
+          `${worker.name.split(" ")[0]} · ${format(new Date(dateStr), "d MMM", { locale: tr })} · ${label}`,
+          {
+            type: "success",
+            action: {
+              label: "Geri al",
+              onClick: () => markAttendance(worker.id, dateStr, current),
+            },
+          },
+        );
+      } catch (err: unknown) {
+        addToast(err instanceof Error ? err.message : String(err), "error");
+      }
+    },
+    [markAttendance, addToast],
+  );
+
+  /** Hafta özetleri: yevmiye zaten haftalık hesaplandığı için doğal ayraç. */
+  const weekSummaries = useMemo(() => {
+    const result: Record<string, { days: number; production: number; revenue: number }> = {};
+    for (const day of daysInMonth) {
+      const dateStr = format(day, "yyyy-MM-dd");
+      const metric = metricsMap[dateStr];
+      if (!metric) continue;
+      const weekKey = daysInMonth.find((d) => isSameWeek(d, day, { weekStartsOn: 1 }))!;
+      const key = format(weekKey, "yyyy-MM-dd");
+      const bucket = (result[key] ??= { days: 0, production: 0, revenue: 0 });
+      bucket.days += 1;
+      bucket.production += metric.production_amount || 0;
+      bucket.revenue += metric.total_earned || 0;
+    }
+    return result;
+  }, [daysInMonth, metricsMap]);
 
   if (activeWorkers.length === 0) {
     if (isLoading) return <TableSkeleton rows={6} cols={4} />;
@@ -292,9 +389,11 @@ export function CalendarView({ currentDate, onDayClick, onWorkerClick }: Calenda
     );
   }
 
+  const activeMetricLabel = METRICS.find((m) => m.key === sideMetric)!.label;
+
   return (
     <div className="flex-1 flex flex-col w-full min-h-0 overflow-hidden">
-      {/* Ay özeti — kart değil, başlığın devamı niteliğinde ince bir şerit */}
+      {/* Ay özeti */}
       <div className="px-4 pb-3 bg-surface shrink-0 grid grid-cols-3 gap-3">
         {[
           {
@@ -328,7 +427,6 @@ export function CalendarView({ currentDate, onDayClick, onWorkerClick }: Calenda
         </div>
       )}
 
-      {/* Lejant */}
       <div className="flex justify-center gap-4 py-1.5 bg-surface text-[11px] text-muted-foreground shrink-0">
         {STATUS_ORDER.map((s) => (
           <span key={s} className="flex items-center gap-1.5">
@@ -338,7 +436,7 @@ export function CalendarView({ currentDate, onDayClick, onWorkerClick }: Calenda
         ))}
       </div>
 
-      {/* Tablo başlığı */}
+      {/* Tablo başlığı — isim yerine baş harf, yer kazandırır */}
       <div ref={headerRef} className="overflow-hidden flex no-scrollbar bg-surface shrink-0">
         <div className="min-w-full flex text-[11px] text-muted-foreground border-y border-border/60">
           <div
@@ -355,17 +453,27 @@ export function CalendarView({ currentDate, onDayClick, onWorkerClick }: Calenda
               aria-label={`${w.name} detayını aç`}
               title={w.name}
               style={WORKER_CELL}
-              className="py-2 px-0.5 truncate text-foreground/80 hover:text-primary active:scale-95 transition-all"
+              className="py-1.5 grid place-items-center active:scale-90 transition-transform"
             >
-              {w.name.split(" ")[0]}
+              <span
+                className={`w-6 h-6 rounded-full grid place-items-center text-[11px] font-semibold text-white ${
+                  w.worker_type === "ORTAK" ? "bg-warn" : "bg-primary"
+                }`}
+              >
+                {w.name.trim().charAt(0).toLocaleUpperCase("tr-TR")}
+              </span>
             </button>
           ))}
-          <div
-            style={{ width: COL.prod }}
-            className="shrink-0 ml-auto py-2 text-center sticky right-0 z-20 bg-surface border-l border-border/50 text-primary"
+          <button
+            type="button"
+            onClick={cycleSideMetric}
+            aria-label={`Sağ sütun: ${activeMetricLabel}. Değiştirmek için dokunun.`}
+            style={{ width: COL.side }}
+            className="shrink-0 py-2 sticky right-0 z-20 bg-surface border-l border-border/50 text-primary flex items-center justify-center gap-1 active:scale-95 transition-transform"
           >
-            Palet
-          </div>
+            {activeMetricLabel}
+            <Repeat className="w-2.5 h-2.5 opacity-60" />
+          </button>
         </div>
       </div>
 
@@ -379,30 +487,52 @@ export function CalendarView({ currentDate, onDayClick, onWorkerClick }: Calenda
       {/* Gövde */}
       <div ref={scrollRef} className="flex-1 overflow-auto no-scrollbar pb-safe-content">
         <div className="min-w-full">
-          {daysInMonth.map((date) => {
+          {daysInMonth.map((date, index) => {
             const dateStr = format(date, "yyyy-MM-dd");
             const weekday = getDay(date);
+            const startsWeek = index === 0 || weekday === 1;
+            const summary = startsWeek ? weekSummaries[dateStr] : undefined;
+
             return (
-              <CalendarRow
-                key={dateStr}
-                dateStr={dateStr}
-                dayNum={format(date, "dd")}
-                dayName={format(date, "EEEEEE", { locale: tr })}
-                label={format(date, "d MMMM EEEE", { locale: tr })}
-                isWeekend={weekday === 0 || weekday === 6}
-                today={isToday(date)}
-                metric={metricsMap[dateStr]}
-                workers={activeWorkers}
-                attendanceMap={attendanceMap}
-                onDayClick={onDayClick}
-                rowRef={
-                  isToday(date)
-                    ? (el) => {
-                        (todayRowRef as React.MutableRefObject<HTMLDivElement | null>).current = el;
-                      }
-                    : undefined
-                }
-              />
+              <div key={dateStr}>
+                {startsWeek && (
+                  <div className="flex items-center gap-2 px-3 py-1 bg-muted/30 border-b border-border/50 text-[10px] text-muted-foreground sticky top-0 z-10">
+                    <span className="shrink-0">
+                      {format(date, "d MMM", { locale: tr })} haftası
+                    </span>
+                    {summary ? (
+                      <span className="ml-auto tabular-nums shrink-0">
+                        {summary.days} gün · {summary.production} palet · ₺
+                        {summary.revenue.toLocaleString("tr-TR")}
+                      </span>
+                    ) : (
+                      <span className="ml-auto shrink-0 opacity-60">kayıt yok</span>
+                    )}
+                  </div>
+                )}
+                <CalendarRow
+                  dateStr={dateStr}
+                  dayNum={format(date, "dd")}
+                  dayName={format(date, "EEEEEE", { locale: tr })}
+                  label={format(date, "d MMMM EEEE", { locale: tr })}
+                  isWeekend={weekday === 0 || weekday === 6}
+                  today={isToday(date)}
+                  sideValue={sideValueFor(dateStr)}
+                  workers={activeWorkers}
+                  attendanceMap={attendanceMap}
+                  readOnly={isClosed}
+                  onDayClick={onDayClick}
+                  onCellTap={handleCellTap}
+                  rowRef={
+                    isToday(date)
+                      ? (el) => {
+                          (todayRowRef as React.MutableRefObject<HTMLDivElement | null>).current =
+                            el;
+                        }
+                      : undefined
+                  }
+                />
+              </div>
             );
           })}
         </div>

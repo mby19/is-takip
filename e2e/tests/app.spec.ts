@@ -64,7 +64,7 @@ test.describe("İş Takip", () => {
       today.getDate(),
     ).padStart(2, "0")}`;
 
-    await page.locator(`[data-date="${dateStr}"]`).click();
+    await page.locator(`[data-date="${dateStr}"] button`).first().click();
     await page.getByRole("button", { name: "Ahmet Yılmaz: Tam" }).click();
     await page.getByLabel("Ciro ₺").fill("5000");
     await page.getByRole("button", { name: "Kaydet" }).click();
@@ -96,7 +96,7 @@ test.describe("İş Takip", () => {
 
     // Gün detayı artık salt okunur
     await page.getByRole("button", { name: "Takvim" }).click();
-    await page.locator(`[data-date="${dateStr}"]`).click();
+    await page.locator(`[data-date="${dateStr}"] button`).first().click();
     await expect(page.getByText(/kapalı — salt okunur/)).toBeVisible();
     await expect(page.getByRole("button", { name: "Dönem Kapalı" })).toBeDisabled();
   });
@@ -113,5 +113,70 @@ test.describe("İş Takip", () => {
     expect(insert).toBeDefined();
     // Yeni format JSON olmalı.
     expect(JSON.parse(insert!.new_data)).toMatchObject({ name: "Ahmet Yılmaz", type: "GUNLUK" });
+  });
+  test("takvimde hücreye dokunmak durumu anında yazar", async ({ page, db }) => {
+    await page.goto("/");
+    await addWorker(page, "Ahmet Yılmaz");
+
+    await page.getByRole("button", { name: "Takvim" }).click();
+    const today = new Date();
+    const dateStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(
+      today.getDate(),
+    ).padStart(2, "0")}`;
+
+    const cell = page.locator(`[data-date="${dateStr}"] button`).nth(1);
+
+    // Boş -> Tam
+    await cell.click();
+    await expect(page.getByText(/tam/i).first()).toBeVisible();
+    expect(db.prepare("SELECT status FROM attendance WHERE date = ?").all(dateStr)).toEqual([
+      { status: "FULL" },
+    ]);
+
+    // Tam -> Yarım
+    await cell.click();
+    expect(db.prepare("SELECT status FROM attendance WHERE date = ?").all(dateStr)).toEqual([
+      { status: "HALF" },
+    ]);
+  });
+
+  test("hücre değişikliği bildirimden geri alınabilir", async ({ page, db }) => {
+    await page.goto("/");
+    await addWorker(page, "Ahmet Yılmaz");
+
+    await page.getByRole("button", { name: "Takvim" }).click();
+    const today = new Date();
+    const dateStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(
+      today.getDate(),
+    ).padStart(2, "0")}`;
+
+    const cell = page.locator(`[data-date="${dateStr}"] button`).nth(1);
+    await cell.click();
+    expect(db.prepare("SELECT COUNT(*) c FROM attendance").get()).toMatchObject({ c: 1 });
+
+    await page.getByRole("button", { name: "Geri al" }).click();
+    await expect
+      .poll(() => db.prepare("SELECT COUNT(*) c FROM attendance").get())
+      .toMatchObject({
+        c: 0,
+      });
+  });
+
+  test("kapalı dönemde hücreler pasif", async ({ page }) => {
+    await page.goto("/");
+    await addWorker(page, "Ahmet Yılmaz");
+
+    await page.getByRole("button", { name: "Ay Sonu" }).click();
+    await page.getByRole("button", { name: /Dönemi Kapat/ }).click();
+    await page.getByRole("button", { name: "Evet, Kapat" }).click();
+    await expect(page.getByText(/kapatıldı/)).toBeVisible();
+
+    await page.getByRole("button", { name: "Takvim" }).click();
+    const today = new Date();
+    const dateStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(
+      today.getDate(),
+    ).padStart(2, "0")}`;
+
+    await expect(page.locator(`[data-date="${dateStr}"] button`).nth(1)).toBeDisabled();
   });
 });
