@@ -281,14 +281,30 @@ export function validateBackup(raw: unknown): NormalizedBackup {
 // Dışa aktarma
 // ---------------------------------------------------------------------------
 
+/**
+ * İsteğe bağlı tablodan okur. Tablo yoksa boş döner.
+ *
+ * Şema onarımı açılışta bu tabloları tamamlıyor; yine de yedek alma
+ * eksik bir tablo yüzünden ASLA başarısız olmamalı — yedek, kullanıcının
+ * verisini kurtaran son mekanizma.
+ */
+const fetchOptional = async (table: string): Promise<unknown[]> => {
+  try {
+    return await fetchQuery(`SELECT * FROM ${table}`);
+  } catch (err: unknown) {
+    console.warn(`[Yedek] ${table} okunamadı, boş geçiliyor:`, err);
+    return [];
+  }
+};
+
 const buildBackupJson = async (): Promise<{ json: string; summary: BackupSummary }> => {
   const workers = await fetchQuery("SELECT * FROM workers");
-  const worker_rate_history = await fetchQuery("SELECT * FROM worker_rate_history");
   const attendance = await fetchQuery("SELECT * FROM attendance");
   const daily_metrics = await fetchQuery("SELECT * FROM daily_metrics");
   const payments = await fetchQuery("SELECT * FROM payments");
   const audit_logs = await fetchQuery("SELECT * FROM audit_logs");
-  const closed_periods = await fetchQuery("SELECT * FROM closed_periods");
+  const worker_rate_history = await fetchOptional("worker_rate_history");
+  const closed_periods = await fetchOptional("closed_periods");
 
   const exported_at = new Date().toISOString();
   const backup = {

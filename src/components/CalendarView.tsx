@@ -41,10 +41,13 @@ const STATUS_STYLE: Record<
 };
 
 /**
- * Hücreye dokununca izlenen sıra. Doğal azalan düzende: tam gün tek dokunuş
- * uzakta (vakaların çoğu), son dokunuş kaydı temizler.
+ * Hücreye dokununca izlenen sıra: Tam → Yarım → Yok → boş → Tam …
+ *
+ * İzin bilerek döngüde DEĞİL. Nadir kullanılıyor ve döngüye girdiğinde
+ * "Yok"tan sonra tekrar "Tam"a dönmek dört dokunuş sürüyordu. İzin, gün
+ * sayfasındaki dört seçenekten doğrudan işaretlenir.
  */
-const CYCLE: (AttendanceStatus | null)[] = ["FULL", "HALF", "ABSENT", "HOLIDAY", null];
+const CYCLE: (AttendanceStatus | null)[] = ["FULL", "HALF", "ABSENT", null];
 const nextStatus = (current: AttendanceStatus | null): AttendanceStatus | null =>
   CYCLE[(CYCLE.indexOf(current) + 1) % CYCLE.length];
 
@@ -98,7 +101,10 @@ function StatusMark({
 
   const Icon = style.icon;
   return (
-    <span className={`${density.chip} rounded-[0.6rem] grid place-items-center ${style.chip}`}>
+    <span
+      key={status}
+      className={`${density.chip} rounded-[0.6rem] grid place-items-center animate-status-pop ${style.chip}`}
+    >
       <Icon className={density.icon} strokeWidth={2.75} />
     </span>
   );

@@ -14,15 +14,18 @@ import { Button } from "./ui/button";
 import { BackupSection } from "./BackupSection";
 import { LockSetupWizard } from "./LockSetupWizard";
 import { PeriodLockSection } from "./PeriodLockSection";
-import { getTriggerSetupError } from "../lib/db";
+import { getTriggerSetupError, getSchemaReport } from "../lib/db";
 import { APP_VERSION } from "../lib/appInfo";
 
 const PALETTES: { id: ThemePalette; label: string; desc: string }[] = [
   { id: "ocean", label: "Okyanus", desc: "Sakin mavi, sıcak zemin" },
+  { id: "graphite", label: "Grafit", desc: "Nötr gri, keskin mavi" },
+  { id: "midnight", label: "Gece Yarısı", desc: "Derin indigo" },
+  { id: "mint", label: "Nane", desc: "Serin yeşil-mavi" },
   { id: "forest", label: "Orman", desc: "Doğal yeşil tonları" },
+  { id: "plum", label: "Erik", desc: "Koyu mor, gül vurgusu" },
   { id: "sunset", label: "Günbatımı", desc: "Sıcak amber & mercan" },
   { id: "mono", label: "Tek Renk", desc: "Yalın gri skalası" },
-  { id: "midnight", label: "Gece Yarısı", desc: "Derin indigo" },
 ];
 
 export function SettingsView({
@@ -33,6 +36,7 @@ export function SettingsView({
   onNavigateLogs: () => void;
 }) {
   const triggerError = getTriggerSetupError();
+  const schema = getSchemaReport();
   const themeMode = useThemeStore((s) => s.mode);
   const themePalette = useThemeStore((s) => s.palette);
   const toggleMode = useThemeStore((s) => s.toggleMode);
@@ -59,6 +63,32 @@ export function SettingsView({
       </header>
 
       <div className="flex-1 overflow-y-auto p-5 space-y-8 pb-safe-content">
+        {schema.failures.length > 0 && (
+          <div className="p-4 rounded-card border-2 border-bad/40 bg-bad-soft flex gap-3">
+            <AlertTriangle className="w-5 h-5 text-bad shrink-0 mt-0.5" />
+            <div className="min-w-0">
+              <h3 className="text-xs font-semibold text-bad">Veritabanı şeması eksik</h3>
+              <p className="text-[11px] text-bad/90 mt-1 leading-relaxed">
+                Bazı tablolar oluşturulamadı; yedekleme ve dönem kilidi çalışmayabilir. Uygulamayı
+                yeniden başlatın, sorun sürerse güncel sürümü yeniden kurun.
+              </p>
+              <ul className="text-[10px] font-mono text-bad/80 mt-1.5 space-y-0.5 break-all">
+                {schema.failures.map((f) => (
+                  <li key={f.step}>
+                    {f.step}: {f.message}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </div>
+        )}
+
+        {schema.failures.length === 0 && schema.repaired.length > 0 && (
+          <div className="p-3 rounded-card border border-ok/30 bg-ok-soft text-[11px] text-ok leading-relaxed">
+            Eksik veritabanı bölümleri onarıldı: {schema.repaired.join(", ")}.
+          </div>
+        )}
+
         {triggerError && (
           <div className="p-4 rounded-card border-2 border-amber-300 dark:border-amber-500/40 bg-warn-soft flex gap-3">
             <AlertTriangle className="w-5 h-5 text-warn shrink-0 mt-0.5" />
@@ -80,7 +110,7 @@ export function SettingsView({
           </h2>
 
           {/* Tema paleti seçici */}
-          <div className="grid grid-cols-5 gap-2">
+          <div className="grid grid-cols-4 gap-2">
             {PALETTES.map((p) => {
               const isActive = themePalette === p.id;
               const preview = PALETTE_PREVIEW[p.id];

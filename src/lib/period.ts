@@ -37,16 +37,24 @@ export function formatPeriod(period: PeriodKey): string {
   return `${MONTHS[index]} ${year}`;
 }
 
-/** Verilen dönemden bugüne kadar olan tüm dönemleri yeniden eskiye sıralar. */
-export function periodsSince(earliest: PeriodKey | null, limit = 36): PeriodKey[] {
+/**
+ * Bugünden geriye, veri bulunan en eski döneme kadar olan dönemler.
+ *
+ * Veri yoksa YALNIZCA içinde bulunulan ay döner — eskiden veri olmasa bile
+ * 36 ay listeleniyor ve ayarlar ekranı gereksizce uzayıp gidiyordu.
+ */
+export function periodsSince(earliest: PeriodKey | null, limit = 24): PeriodKey[] {
   const now = new Date();
+  const current = periodOfDate(now);
+  if (!earliest) return [current];
+
   const result: PeriodKey[] = [];
   const cursor = new Date(now.getFullYear(), now.getMonth(), 1);
 
   for (let i = 0; i < limit; i++) {
     const key = periodOfDate(cursor);
     result.push(key);
-    if (earliest && key <= earliest) break;
+    if (key <= earliest) break;
     cursor.setMonth(cursor.getMonth() - 1);
   }
   return result;

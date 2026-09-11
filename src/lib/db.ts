@@ -2,6 +2,7 @@ import Database from "@tauri-apps/plugin-sql";
 import { DROP_TRIGGERS, CREATE_TRIGGERS, TRIGGER_SCHEMA_VERSION } from "../schema/triggers";
 import { buildTransactionScript } from "./sql";
 import { reportError } from "./errorMonitoring";
+import { repairSchema, type SchemaRepairReport } from "./schemaGuard";
 
 interface DbResult {
   rowsAffected: number;
@@ -21,6 +22,10 @@ let loadPromise: Promise<DatabaseInstance> | null = null;
  */
 let triggerSetupError: string | null = null;
 export const getTriggerSetupError = (): string | null => triggerSetupError;
+
+/** Açılışta yapılan şema onarımlarının raporu — Ayarlar ekranında gösterilir. */
+let schemaReport: SchemaRepairReport = { repaired: [], failures: [] };
+export const getSchemaReport = (): SchemaRepairReport => schemaReport;
 
 /**
  * Tetikleyicileri yalnızca tanımlar değiştiğinde yeniden kurar.
@@ -57,6 +62,22 @@ export const getDb = async (): Promise<DatabaseInstance> => {
           await d.execute("PRAGMA journal_mode=WAL;");
         } catch {
           // WAL kritik değil, varsayılan journal modu ile devam edilir.
+        }
+
+        // Migration'lar eksik kalmışsa tamamla. Tetikleyicilerden ÖNCE olmalı:
+        // tetikleyiciler var olmayan tablolara kurulamaz.
+        try {
+          schemaReport = await repairSchema(d);
+          if (schemaReport.repaired.length > 0) {
+            console.info("[Şema] Onarıldı:", schemaReport.repaired.join(", "));
+          }
+          for (const f of schemaReport.failures) {
+            reportError(new Error(`${f.step}: ${f.message}`), { scope: "schema-repair" });
+          }
+        } catch (err: unknown) {
+          reportError(err instanceof Error ? err : new Error(String(err)), {
+            scope: "schema-repair",
+          });
         }
 
         try {

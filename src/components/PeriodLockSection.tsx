@@ -27,10 +27,11 @@ export function PeriodLockSection() {
   const closedSet = useMemo(() => new Set(closed.map((c) => c.period)), [closed]);
   const currentPeriod = periodOfDate(new Date());
 
-  const periods = useMemo(() => {
-    const all = periodsSince(earliest);
-    return showAll ? all : all.slice(0, 6);
-  }, [earliest, showAll]);
+  const allPeriods = useMemo(() => periodsSince(earliest), [earliest]);
+  const periods = useMemo(
+    () => (showAll ? allPeriods : allPeriods.slice(0, 6)),
+    [allPeriods, showAll],
+  );
 
   const apply = async () => {
     if (!pending) return;
@@ -63,7 +64,7 @@ export function PeriodLockSection() {
         Sistem Geçmişi'ne kaydedilir.
       </p>
 
-      <div className="rounded-card border bg-card divide-y overflow-hidden">
+      <div className="rounded-card border bg-card divide-y overflow-y-auto no-scrollbar max-h-80">
         {isLoading && periods.length === 0 && (
           <div className="flex items-center justify-center py-8">
             <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
@@ -111,12 +112,12 @@ export function PeriodLockSection() {
         })}
       </div>
 
-      {periodsSince(earliest).length > 6 && (
+      {allPeriods.length > 6 && (
         <button
           onClick={() => setShowAll((v) => !v)}
           className="w-full h-10 rounded-control border text-[11px] font-medium text-muted-foreground hover:bg-muted transition-colors"
         >
-          {showAll ? "Daha az göster" : "Tüm dönemleri göster"}
+          {showAll ? "Daha az göster" : `Tüm dönemleri göster (${allPeriods.length})`}
         </button>
       )}
 

@@ -44,11 +44,23 @@ describe("dönem yardımcıları", () => {
     expect(formatPeriod("bozuk")).toBe("bozuk");
   });
 
-  it("bugünden geriye doğru dönemleri sıralar", () => {
-    const list = periodsSince(null, 4);
+  it("veri yoksa yalnızca içinde bulunulan ayı döner", () => {
+    // Eskiden 36 ay listeleniyordu ve ayarlar ekranı boş yere uzayıp gidiyordu.
+    expect(periodsSince(null)).toEqual([periodOfDate(new Date())]);
+  });
+
+  it("bugünden geriye, veri bulunan en eski döneme kadar sıralar", () => {
+    const now = new Date();
+    const threeMonthsAgo = periodOfDate(new Date(now.getFullYear(), now.getMonth() - 3, 1));
+    const list = periodsSince(threeMonthsAgo);
     expect(list).toHaveLength(4);
-    expect(list[0]).toBe(periodOfDate(new Date()));
+    expect(list[0]).toBe(periodOfDate(now));
+    expect(list[list.length - 1]).toBe(threeMonthsAgo);
     expect(list[0] > list[1]).toBe(true);
+  });
+
+  it("üst sınırı aşmaz", () => {
+    expect(periodsSince("2000-01", 12)).toHaveLength(12);
   });
 
   it("en eski veri dönemine ulaşınca durur", () => {

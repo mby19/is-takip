@@ -1,405 +1,126 @@
-import { useEffect, useState } from "react";
-import { useAuditLogStore } from "../stores/auditLogStore";
-import { parseLogData, parseAttendanceSnapshot } from "../utils/parseLogData";
-import { useWorkerStore } from "../stores/workerStore";
-import { useToastStore } from "../stores/toastStore";
+import { useEffect, useMemo, useState } from "react";
 import {
   ArrowLeft,
-  Clock,
-  Trash2,
-  Edit3,
-  PlusCircle,
   RotateCcw,
   Loader2,
-  ChevronDown,
-  AlertCircle,
   History,
+  CalendarDays,
+  Users,
+  Wallet,
+  ClipboardCheck,
   Lock,
-  LockOpen,
+  Database,
+  ChevronDown,
 } from "lucide-react";
-import { format, parseISO } from "date-fns";
-import { tr } from "date-fns/locale";
+import { useAuditLogStore } from "../stores/auditLogStore";
+import { useWorkerStore } from "../stores/workerStore";
+import { useToastStore } from "../stores/toastStore";
+import { usePeriodStore } from "../stores/periodStore";
+import { periodOf, formatPeriod } from "../lib/period";
+import { parseLogData } from "../utils/parseLogData";
+import {
+  describeAuditLog,
+  groupLogsByDay,
+  formatLogTime,
+  type AuditKind,
+  type AuditTone,
+} from "../utils/auditLogFormat";
 import type { AuditLog } from "../types";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "./ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "./ui/dialog";
+
+const TONE_TEXT: Record<AuditTone, string> = {
+  ok: "text-ok",
+  warn: "text-warn",
+  bad: "text-bad",
+  info: "text-info",
+  neutral: "text-muted-foreground",
+};
+
+const TONE_BG: Record<AuditTone, string> = {
+  ok: "bg-ok-soft text-ok",
+  warn: "bg-warn-soft text-warn",
+  bad: "bg-bad-soft text-bad",
+  info: "bg-info-soft text-info",
+  neutral: "bg-muted text-muted-foreground",
+};
+
+const KIND_ICON: Record<AuditKind, typeof History> = {
+  attendance: ClipboardCheck,
+  metrics: CalendarDays,
+  payment: Wallet,
+  worker: Users,
+  period: Lock,
+  backup: Database,
+  revert: RotateCcw,
+  other: History,
+};
+
+/** Filtre sekmeleri — eskiden yalnızca üç tanesi vardı, kişiler ve sistem yoktu. */
+const FILTERS: { id: string; label: string; kinds: AuditKind[] | null }[] = [
+  { id: "ALL", label: "Tümü", kinds: null },
+  { id: "attendance", label: "Puantaj", kinds: ["attendance", "metrics"] },
+  { id: "payment", label: "Ödeme", kinds: ["payment"] },
+  { id: "worker", label: "Kişiler", kinds: ["worker"] },
+  { id: "system", label: "Sistem", kinds: ["period", "backup", "revert", "other"] },
+];
 
 export function AuditLogView({ onBack }: { onBack: () => void }) {
-  const { logs, fetchLogs, isLoading, revertLog } = useAuditLogStore();
-  const { workers } = useWorkerStore();
-  const [filter, setFilter] = useState<"ALL" | "daily_metrics" | "payments">("ALL");
-  const [revertingId, setRevertingId] = useState<number | null>(null);
-  const [confirmLog, setConfirmLog] = useState<AuditLog | null>(null);
-  const [expandedIds, setExpandedIds] = useState<Set<number>>(new Set());
+  const logs = useAuditLogStore((s) => s.logs);
+  const fetchLogs = useAuditLogStore((s) => s.fetchLogs);
+  const isLoading = useAuditLogStore((s) => s.isLoading);
+  const revertLog = useAuditLogStore((s) => s.revertLog);
+  const workers = useWorkerStore((s) => s.workers);
+  const closedPeriods = usePeriodStore((s) => s.closed);
   const addToast = useToastStore((s) => s.addToast);
 
-  const toggleExpand = (id: number) => {
-    setExpandedIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) {
-        next.delete(id);
-      } else {
-        next.add(id);
-      }
-      return next;
-    });
-  };
-
-  const getWorkerName = (id: number | string) => {
-    const w = workers.find((w) => w.id === (typeof id === "string" ? parseInt(id) : id));
-    return w?.name || `Çalışan #${id}`;
-  };
+  const [filter, setFilter] = useState("ALL");
+  const [revertingId, setRevertingId] = useState<number | null>(null);
+  const [confirmLog, setConfirmLog] = useState<AuditLog | null>(null);
+  const [expanded, setExpanded] = useState<Set<number>>(new Set());
 
   useEffect(() => {
     fetchLogs();
   }, [fetchLogs]);
 
-  const filteredLogs = logs.filter((log) => {
-    if (filter === "ALL") {
-      return true; // Tümü sekmesinde tüm kayıtları göster
-    }
-    return log.entity_table === filter;
-  });
+  const resolveWorkerName = useMemo(() => {
+    const byId = new Map(workers.map((w) => [w.id, w.name]));
+    return (id: number) => byId.get(id);
+  }, [workers]);
 
-  // --- Helpers ---
-  const statusLabel = (s: string | undefined) => {
-    const map: Record<string, string> = {
-      FULL: "Tam Gün",
-      HALF: "Yarım Gün",
-      ABSENT: "Yok",
-      HOLIDAY: "Tatil",
-    };
-    return map[s || ""] || s || "—";
-  };
-  const statusColor = (s: string | undefined) => {
-    const map: Record<string, string> = {
-      FULL: "text-ok",
-      HALF: "text-warn",
-      ABSENT: "text-bad",
-      HOLIDAY: "text-primary",
-    };
-    return map[s || ""] || "text-muted-foreground";
-  };
-  const fmtDate = (d: string | undefined) => {
-    if (!d) return "";
-    try {
-      const m = [
-        "Oca",
-        "Şub",
-        "Mar",
-        "Nis",
-        "May",
-        "Haz",
-        "Tem",
-        "Ağu",
-        "Eyl",
-        "Eki",
-        "Kas",
-        "Ara",
-      ];
-      const [y, mo, da] = d.split("-");
-      return `${parseInt(da)} ${m[parseInt(mo) - 1]} ${y}`;
-    } catch {
-      return d;
-    }
-  };
-  const fmtTime = (c: string) => {
-    try {
-      return format(parseISO(c.replace(" ", "T")), "dd MMM HH:mm", { locale: tr });
-    } catch {
-      return c;
-    }
-  };
+  /** Kayıt + görünüm modeli bir kez hesaplanır. */
+  const entries = useMemo(
+    () => logs.map((log) => ({ log, view: describeAuditLog(log, resolveWorkerName) })),
+    [logs, resolveWorkerName],
+  );
 
-  const parseAtts = (s: string | null | undefined) => {
-    const res: Record<string, { name: string; status: string }> = {};
-    for (const entry of parseAttendanceSnapshot(s)) {
-      res[String(entry.id)] = { name: entry.name, status: entry.status };
-    }
-    return res;
-  };
+  const visible = useMemo(() => {
+    const kinds = FILTERS.find((f) => f.id === filter)?.kinds;
+    if (!kinds) return entries;
+    return entries.filter((e) => kinds.includes(e.view.kind));
+  }, [entries, filter]);
 
-  // --- Log mesajı ---
-  const renderLog = (log: AuditLog) => {
-    const nd = parseLogData(log.new_data);
-    const od = parseLogData(log.old_data);
+  const groups = useMemo(() => {
+    const byDay = groupLogsByDay(visible.map((e) => e.log));
+    const viewById = new Map(visible.map((e) => [e.log.id, e.view]));
+    return byDay.map((g) => ({
+      label: g.label,
+      entries: g.logs.map((log) => ({ log, view: viewById.get(log.id)! })),
+    }));
+  }, [visible]);
 
-    // Dönem kilidi
-    if (log.entity_table === "closed_periods") {
-      const label = nd?.label || nd?.period || "";
-      return log.action_type === "CLOSE_PERIOD" ? (
-        <p>
-          <b className="text-info">{label}</b> dönemi kapatıldı
-        </p>
-      ) : (
-        <p>
-          <b className="text-warn">{label}</b> dönemi yeniden açıldı
-        </p>
-      );
-    }
+  const toggle = (id: number) =>
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
 
-    // Çalışan ekleme
-    if (log.entity_table === "workers" && log.action_type === "INSERT") {
-      const name = nd?.name || "?";
-      const type = nd?.type === "ORTAK" ? "Ortak" : nd?.type === "GUNLUK" ? "Günlük" : "";
-      return (
-        <p>
-          <b className="text-primary">{name}</b> {type && `(${type})`} eklendi
-        </p>
-      );
-    }
-
-    // Çalışma Durumu — genişletilebilir
-    if (log.entity_table === "attendance") {
-      const wid = nd?.worker_id || od?.worker_id;
-      const name = wid
-        ? getWorkerName(wid)
-        : nd?.worker_name || od?.worker_name || `#${log.record_id}`;
-      const date = nd?.date || od?.date;
-      const hasDetail = !!(wid || date);
-      const isOpen = expandedIds.has(log.id);
-
-      const summary =
-        log.action_type === "INSERT" ? (
-          <>
-            <b>{name}</b> çalışma durumu eklendi
-          </>
-        ) : (
-          <>
-            <b>{name}</b> çalışma durumu güncellendi
-          </>
-        );
-
-      return (
-        <div>
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              if (hasDetail) toggleExpand(log.id);
-            }}
-            className="flex items-center gap-1 w-full text-left"
-          >
-            <div className="flex-1">
-              <div className="text-[12px]">{summary}</div>
-              <div className="text-[10px] text-muted-foreground font-bold">{fmtDate(date)}</div>
-            </div>
-            {hasDetail && (
-              <ChevronDown
-                className={`w-3.5 h-3.5 text-muted-foreground transition-transform ${isOpen ? "rotate-180" : ""}`}
-              />
-            )}
-          </button>
-          {isOpen && hasDetail && (
-            <div className="mt-2 space-y-1">
-              <div className="flex justify-between px-2.5 py-1 rounded-lg bg-muted/30 text-[11px]">
-                <span className="text-muted-foreground">Tarih</span>
-                <b>{fmtDate(date)}</b>
-              </div>
-              {log.action_type === "INSERT" && nd?.status && (
-                <div className="flex justify-between px-2.5 py-1 rounded-lg bg-muted/30 text-[11px]">
-                  <span className="text-muted-foreground">Durum</span>
-                  <b className={statusColor(nd.status)}>{statusLabel(nd.status)}</b>
-                </div>
-              )}
-              {log.action_type === "UPDATE" && (
-                <div className="flex justify-between px-2.5 py-1 rounded-lg bg-muted/30 text-[11px]">
-                  <span className="text-muted-foreground">Durum</span>
-                  <span>
-                    <span className="line-through opacity-50">{statusLabel(od?.status)}</span>
-                    {" → "}
-                    <b className={statusColor(nd?.status)}>{statusLabel(nd?.status)}</b>
-                  </span>
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-      );
-    }
-
-    // Günlük üretim — genişletilebilir
-    if (log.entity_table === "daily_metrics") {
-      const date = nd?.date || od?.date;
-      const hasDetail = (nd && !nd._raw) || (od && !od._raw);
-      const isOpen = expandedIds.has(log.id);
-
-      // Kaç kişinin çalışma durumu değişmiş bulalım
-      const oldAtts = parseAtts(od?.atts);
-      const newAtts = parseAtts(nd?.atts);
-      const changedCount = Object.keys(newAtts).filter(
-        (id) => newAtts[id].status !== (oldAtts[id]?.status || "YOK"),
-      ).length;
-
-      return (
-        <div>
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              if (hasDetail) toggleExpand(log.id);
-            }}
-            className="flex items-center gap-1 w-full text-left"
-          >
-            <div className="flex-1">
-              <div className="flex items-center gap-2">
-                <b>{fmtDate(date)}</b> günlük veri{" "}
-                {log.action_type === "INSERT" ? "eklendi" : "güncellendi"}
-                {changedCount > 0 && (
-                  <span className="bg-primary/10 text-primary text-[10px] px-1.5 py-0.5 rounded-full font-semibold border border-primary/20">
-                    {changedCount} kişi güncellendi
-                  </span>
-                )}
-              </div>
-              {hasDetail && (
-                <span className="text-primary/60 text-[10px]">Detaylar için dokunun ▾</span>
-              )}
-            </div>
-            {hasDetail && (
-              <ChevronDown
-                className={`w-3.5 h-3.5 text-muted-foreground transition-transform ${isOpen ? "rotate-180" : ""}`}
-              />
-            )}
-          </button>
-          {isOpen && hasDetail && renderMetricsDetail(od, nd, log.action_type)}
-        </div>
-      );
-    }
-
-    // Ödeme
-    if (log.entity_table === "payments") {
-      const d = nd || od;
-      const workerName = d?.worker_id ? getWorkerName(d.worker_id) : d?.worker_name || "";
-      const actionLabel =
-        log.action_type === "INSERT"
-          ? "eklendi"
-          : log.action_type === "UPDATE"
-            ? "güncellendi"
-            : "silindi";
-
-      return (
-        <p>
-          {workerName && (
-            <>
-              <b>{workerName}</b> için{" "}
-            </>
-          )}
-          <b className="text-ok">₺{d?.amount || "0"}</b> tutarında ödeme {actionLabel}
-        </p>
-      );
-    }
-
-    // Fallback
-    return (
-      <p className="text-muted-foreground">
-        Bir kayıt {log.action_type === "INSERT" ? "eklendi" : "güncellendi"}
-      </p>
-    );
-  };
-
-  const renderMetricsDetail = (
-    od: Record<string, string> | null,
-    nd: Record<string, string> | null,
-    action: string,
-  ) => {
-    const fields = [
-      { k: "production", ak: "production_amount", label: "Palet", suffix: " adet" },
-      { k: "earned", ak: "total_earned", label: "Toplam Kazanç", prefix: "₺" },
-      { k: "expenses", ak: "extra_expenses", label: "Giderler", prefix: "₺" },
-    ];
-    const g = (d: Record<string, string> | null, k: string, ak: string) =>
-      d?.[k] ?? d?.[ak] ?? null;
-    const f = (v: string | null, field: (typeof fields)[0]) => {
-      if (!v && v !== "0") return "—";
-      return `${field.prefix || ""}${v}${field.suffix || ""}`;
-    };
-
-    const oldAtts = parseAtts(od?.atts);
-    const newAtts = parseAtts(nd?.atts);
-    const allWorkerIds = Array.from(new Set([...Object.keys(oldAtts), ...Object.keys(newAtts)]));
-
-    return (
-      <div className="mt-2 space-y-3">
-        {/* Metrikler */}
-        <div className="space-y-1">
-          {fields.map((field) => {
-            const ov = g(od, field.k, field.ak);
-            const nv = g(nd, field.k, field.ak);
-
-            if (action === "INSERT") {
-              if (!nv && nv !== "0") return null;
-              return (
-                <div
-                  key={field.k}
-                  className="flex justify-between px-2.5 py-1 rounded-lg bg-muted/30 text-[11px]"
-                >
-                  <span className="text-muted-foreground">{field.label}</span>
-                  <b className="text-foreground">{f(nv, field)}</b>
-                </div>
-              );
-            }
-
-            const isSame =
-              ov === nv || (ov !== null && nv !== null && parseFloat(ov) === parseFloat(nv));
-            if (isSame) return null;
-
-            return (
-              <div
-                key={field.k}
-                className="flex justify-between px-2.5 py-1 rounded-lg bg-muted/30 text-[11px]"
-              >
-                <span className="text-muted-foreground">{field.label}</span>
-                <span>
-                  <span className="line-through opacity-50">{f(ov, field)}</span> →{" "}
-                  <b>{f(nv, field)}</b>
-                </span>
-              </div>
-            );
-          })}
-        </div>
-
-        {/* Personel Durumu / Değişiklikleri */}
-        {allWorkerIds.length > 0 && (
-          <div className="border-t pt-2">
-            <p className="text-[10px] font-bold text-muted-foreground   mb-1.5 px-1">
-              Personel Durumu
-            </p>
-            <div className="grid grid-cols-2 gap-1.5">
-              {allWorkerIds.map((id) => {
-                const o = oldAtts[id];
-                const n = newAtts[id];
-                const name = getWorkerName(id) || n?.name || o?.name || "?";
-                const os = o?.status || "YOK";
-                const ns = n?.status || "YOK";
-                const isChanged = os !== ns;
-
-                const sLbl = (s: string) => (s === "FULL" ? "Tam" : s === "HALF" ? "Yarım" : "Yok");
-
-                return (
-                  <div
-                    key={id}
-                    className={`flex items-center justify-between px-2 py-1 rounded-md border ${isChanged ? "bg-primary/5 border-primary/20 shadow-sm" : "bg-muted/20 border-border/30 opacity-70"}`}
-                  >
-                    <span
-                      className={`text-[10px] truncate pr-1 ${isChanged ? "font-bold text-primary" : "font-medium"}`}
-                    >
-                      {name}
-                    </span>
-                    <span className="text-[10px] font-semibold flex items-center gap-0.5">
-                      {isChanged ? (
-                        <>
-                          <span className={`${statusColor(os)} opacity-40`}>{sLbl(os)}</span>
-                          <span className="text-muted-foreground/30 text-[10px]">→</span>
-                          <span className={statusColor(ns)}>{sLbl(ns)}</span>
-                        </>
-                      ) : ns === "FULL" || ns === "HALF" ? (
-                        <span className={statusColor(ns)}>{sLbl(ns)}</span>
-                      ) : null}
-                    </span>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        )}
-      </div>
-    );
+  /** Kaydın dokunduğu gün kapalı bir dönemdeyse geri alma engellenir. */
+  const isLocked = (log: AuditLog): boolean => {
+    const data = parseLogData(log.old_data) ?? parseLogData(log.new_data);
+    const date = data?.date;
+    return !!date && closedPeriods.some((c) => c.period === periodOf(date));
   };
 
   const handleRevert = async (log: AuditLog) => {
@@ -408,248 +129,232 @@ export function AuditLogView({ onBack }: { onBack: () => void }) {
       await revertLog(log);
       addToast("İşlem geri alındı", "success");
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      addToast("Geri alma hatası: " + msg, "error");
+      addToast(err instanceof Error ? err.message : String(err), "error");
     } finally {
       setRevertingId(null);
+      setConfirmLog(null);
     }
   };
 
-  const getRevertDescription = (log: AuditLog) => {
-    const nd = parseLogData(log.new_data);
-    const od = parseLogData(log.old_data);
-    const date = nd?.date || od?.date;
-    const wid = nd?.worker_id || od?.worker_id;
-    const wname = wid ? getWorkerName(wid) : nd?.worker_name || od?.worker_name || "";
-
-    const fmtDateLocal = (d: string) => {
-      try {
-        return format(parseISO(d), "dd MMMM yyyy", { locale: tr });
-      } catch {
-        return d;
-      }
-    };
-
-    if (log.entity_table === "daily_metrics") {
-      const dateStr = date ? fmtDateLocal(date) : "";
-      if (log.action_type === "UPDATE") {
-        return `${dateStr} tarihli günlük veriyi ve çalışma durumlarını eski haline geri getirir.`;
-      }
-      if (log.action_type === "INSERT") {
-        return `${dateStr} tarihindeki tüm günlük veriyi ve çalışma durumlarını komple siler.`;
-      }
-      if (log.action_type === "DELETE") {
-        return `Silinen ${dateStr} tarihli günlük veriyi ve çalışma durumlarını geri getirir.`;
-      }
-    }
-
-    if (log.entity_table === "attendance") {
-      const dateStr = date ? fmtDateLocal(date) : "";
-      const name = wname || `Çalışan #${log.record_id}`;
-      return `${name} adlı kişinin ${dateStr} tarihindeki çalışma durumunu eski haline döndürür.`;
-    }
-
-    if (log.entity_table === "payments") {
-      const amount = nd?.amount || od?.amount || "0";
-      const name = wname || (wid ? getWorkerName(wid) : `Personel #${wid}`);
-      if (log.action_type === "INSERT") {
-        return `${name} için eklenmiş olan ₺${amount} tutarındaki ödeme kaydını veritabanından siler.`;
-      }
-      if (log.action_type === "DELETE") {
-        return `${name} için silinmiş olan ₺${amount} tutarındaki ödemeyi geri getirerek veritabanına yeniden ekler.`;
-      }
-      if (log.action_type === "UPDATE") {
-        const oldAmt = od?.amount || "0";
-        return `${name} için yapılan ödeme güncellemesini iptal ederek tutarı eski haline (₺${oldAmt}) geri yükler.`;
-      }
-    }
-
-    if (log.entity_table === "workers") {
-      const name = nd?.name || od?.name || `Çalışan #${log.record_id}`;
-      if (log.action_type === "INSERT") {
-        return `"${name}" adlı kişiyi ve tüm çalışma durumu/ödeme geçmişini sistemden tamamen siler.`;
-      }
-      if (log.action_type === "DELETE") {
-        return `Silinen "${name}" isimli çalışanı ve profilini veritabanına geri yükler.`;
-      }
-      if (log.action_type === "UPDATE") {
-        return `"${name}" isimli çalışanın bilgilerinde (günlük yevmiye, çalışan tipi vb.) yapılan güncellemeleri geri alarak eski haline döndürür.`;
-      }
-    }
-
-    return "Bu işlem yapılan değişiklikleri geri alarak veritabanını önceki durumuna döndürecektir.";
-  };
-
-  const actionIcon = (t: string) => {
-    if (t === "INSERT") return <PlusCircle className="w-3.5 h-3.5 text-ok shrink-0" />;
-    if (t === "UPDATE") return <Edit3 className="w-3.5 h-3.5 text-warn shrink-0" />;
-    if (t === "REVERT") return <RotateCcw className="w-3.5 h-3.5 text-sky-500 shrink-0" />;
-    if (t === "EXPORT" || t === "IMPORT")
-      return <History className="w-3.5 h-3.5 text-primary shrink-0" />;
-    if (t === "CLOSE_PERIOD") return <Lock className="w-3.5 h-3.5 text-sky-500 shrink-0" />;
-    if (t === "REOPEN_PERIOD") return <LockOpen className="w-3.5 h-3.5 text-warn shrink-0" />;
-    return <Trash2 className="w-3.5 h-3.5 text-bad shrink-0" />;
-  };
+  const confirmView = confirmLog ? describeAuditLog(confirmLog, resolveWorkerName) : null;
 
   return (
     <div className="flex flex-col h-full bg-background">
-      {/* Header */}
-      <header className="px-4 pt-safe-header pb-3 border-b bg-card flex flex-col gap-3 shrink-0">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <button
-              onClick={onBack}
-              className="w-10 h-10 rounded-control bg-muted/60 flex items-center justify-center active:scale-90 transition-all"
-            >
-              <ArrowLeft className="w-5 h-5" />
-            </button>
-            <div>
-              <h1 className="text-lg font-semibold tracking-tight">İşlem Geçmişi</h1>
-              <p className="text-[10px] font-bold text-muted-foreground ">{logs.length} kayıt</p>
-            </div>
+      <header className="px-4 pt-safe-header pb-3 border-b bg-surface flex flex-col gap-3 shrink-0">
+        <div className="flex items-center gap-3">
+          <button
+            onClick={onBack}
+            aria-label="Geri"
+            className="w-10 h-10 rounded-control bg-muted/60 flex items-center justify-center active:scale-90 transition-all"
+          >
+            <ArrowLeft className="w-5 h-5" />
+          </button>
+          <div>
+            <h1 className="text-[17px] font-semibold tracking-tight">İşlem geçmişi</h1>
+            <p className="text-[11px] text-muted-foreground">
+              {logs.length} kayıt · son 12 ay saklanır
+            </p>
           </div>
         </div>
 
-        <div className="flex gap-1.5">
-          {[
-            { id: "ALL", label: "Tümü" },
-            { id: "daily_metrics", label: "Günlük Veri" },
-            { id: "payments", label: "Ödemeler" },
-          ].map((item) => (
+        <div className="flex gap-1.5 overflow-x-auto no-scrollbar -mx-1 px-1">
+          {FILTERS.map((f) => (
             <button
-              key={item.id}
-              onClick={() => setFilter(item.id as "ALL" | "daily_metrics" | "payments")}
-              className={`px-3.5 py-1.5 rounded-lg text-[10px] font-bold transition-all ${
-                filter === item.id
-                  ? "bg-primary text-primary-foreground shadow-sm"
-                  : "bg-muted/50 dark:bg-muted/20 text-muted-foreground"
+              key={f.id}
+              onClick={() => setFilter(f.id)}
+              aria-pressed={filter === f.id}
+              className={`shrink-0 h-8 px-3 rounded-full text-[12px] font-medium transition-all active:scale-95 ${
+                filter === f.id
+                  ? "bg-primary text-primary-foreground"
+                  : "bg-muted/60 text-muted-foreground hover:text-foreground"
               }`}
             >
-              {item.label}
+              {f.label}
             </button>
           ))}
         </div>
       </header>
 
-      {/* Log listesi */}
-      <div className="flex-1 overflow-y-auto no-scrollbar">
-        <div className="pb-safe-content divide-y divide-border/50">
-          {isLoading && (
-            <p className="text-center py-10 animate-pulse text-sm text-muted-foreground">
-              Yükleniyor...
-            </p>
-          )}
+      <div className="flex-1 overflow-y-auto no-scrollbar pb-safe-content">
+        {isLoading && logs.length === 0 && (
+          <div className="flex items-center justify-center py-16">
+            <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
+          </div>
+        )}
 
-          {filteredLogs.map((log) => (
-            <div key={log.id} className={`px-3.5 py-3 ${log.reverted_at ? "opacity-55" : ""}`}>
-              {/* Üst satır: ikon + zaman + geri al */}
-              <div className="flex items-center justify-between mb-1.5">
-                <div className="flex items-center gap-1.5">
-                  {actionIcon(log.action_type)}
-                  <span className="text-[10px] text-muted-foreground font-medium flex items-center gap-1">
-                    <Clock className="w-2.5 h-2.5" />
-                    {fmtTime(log.created_at)}
+        {groups.map((group) => (
+          <section key={group.label}>
+            <h2 className="sticky top-0 z-10 px-4 py-1.5 bg-surface/95 backdrop-blur-sm text-[11px] font-medium text-muted-foreground border-b border-border/50">
+              {group.label}
+            </h2>
+
+            {group.entries.map(({ log, view }) => {
+              const Icon = KIND_ICON[view.kind];
+              const open = expanded.has(log.id);
+              const locked = isLocked(log);
+              const canRevert = view.revertable && !log.reverted_at && !locked;
+
+              return (
+                <article
+                  key={log.id}
+                  className={`flex gap-3 px-4 py-3 border-b border-border/40 transition-opacity ${
+                    log.reverted_at ? "opacity-55" : ""
+                  }`}
+                >
+                  <span
+                    className={`w-8 h-8 rounded-full grid place-items-center shrink-0 ${TONE_BG[view.tone]}`}
+                  >
+                    <Icon className="w-4 h-4" />
                   </span>
-                </div>
-                {log.reverted_at ? (
-                  <span className="text-[10px] font-bold text-info bg-info-soft px-2 py-0.5 rounded flex items-center gap-1">
-                    <RotateCcw className="w-3 h-3" />
-                    Geri alındı
-                  </span>
-                ) : (
-                  ["attendance", "daily_metrics", "payments", "workers"].includes(
-                    log.entity_table,
-                  ) &&
-                  ["UPDATE", "INSERT", "DELETE"].includes(log.action_type) && (
-                    <button
-                      onClick={() => setConfirmLog(log)}
-                      disabled={revertingId === log.id}
-                      className="text-[11px] text-muted-foreground hover:text-bad px-2 py-1 rounded-lg hover:bg-bad-soft active:scale-95 transition-colors flex items-center gap-1 disabled:opacity-50"
-                    >
-                      {revertingId === log.id ? (
-                        <Loader2 className="w-3 h-3 animate-spin" />
-                      ) : (
-                        <RotateCcw className="w-3 h-3" />
+
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-baseline gap-2">
+                      <p className="text-[13px] font-medium leading-snug flex-1 min-w-0">
+                        {view.title}
+                      </p>
+                      <time className="text-[11px] text-muted-foreground tabular-nums shrink-0">
+                        {formatLogTime(log.created_at)}
+                      </time>
+                    </div>
+
+                    {view.subtitle && (
+                      <p className="text-[11px] text-muted-foreground mt-0.5">{view.subtitle}</p>
+                    )}
+
+                    {log.reverted_at && (
+                      <p className="text-[11px] text-info mt-1 flex items-center gap-1">
+                        <RotateCcw className="w-3 h-3" /> Geri alındı
+                      </p>
+                    )}
+
+                    {open && view.details.length > 0 && (
+                      <dl className="mt-2 rounded-control bg-muted/40 divide-y divide-border/50 animate-screen-enter">
+                        {view.details.map((d, i) => (
+                          <div
+                            key={i}
+                            className="flex items-center justify-between gap-3 px-3 py-1.5"
+                          >
+                            <dt className="text-[11px] text-muted-foreground truncate">
+                              {d.label}
+                            </dt>
+                            <dd className="text-[12px] font-medium tabular-nums shrink-0">
+                              {d.was && (
+                                <span className="text-muted-foreground line-through mr-1.5">
+                                  {d.was}
+                                </span>
+                              )}
+                              <span className={d.tone ? TONE_TEXT[d.tone] : ""}>{d.value}</span>
+                            </dd>
+                          </div>
+                        ))}
+                      </dl>
+                    )}
+
+                    <div className="flex items-center gap-3 mt-1.5">
+                      {view.details.length > 0 && (
+                        <button
+                          onClick={() => toggle(log.id)}
+                          className="text-[11px] text-muted-foreground hover:text-foreground flex items-center gap-1 transition-colors"
+                        >
+                          {open ? "Gizle" : `Ayrıntı (${view.details.length})`}
+                          <ChevronDown
+                            className={`w-3 h-3 transition-transform ${open ? "rotate-180" : ""}`}
+                          />
+                        </button>
                       )}
-                      Geri Al
-                    </button>
-                  )
-                )}
-              </div>
-              {/* Mesaj */}
-              <div className="text-[13px] leading-relaxed">{renderLog(log)}</div>
-            </div>
-          ))}
 
-          {filteredLogs.length === 0 && !isLoading && (
-            <div className="flex flex-col items-center justify-center py-16 gap-4 text-center">
-              <div className="w-16 h-16 rounded-card bg-muted/50 flex items-center justify-center">
-                <History className="w-8 h-8 text-muted-foreground/40" />
-              </div>
-              <div className="space-y-1">
-                <p className="text-sm font-bold text-muted-foreground">Henüz kayıt yok</p>
-                <p className="text-[11px] text-muted-foreground/70 max-w-60 leading-relaxed">
-                  Veri girişi yaptığınızda tüm değişiklikler burada görünecek.
-                </p>
-              </div>
+                      {canRevert && (
+                        <button
+                          onClick={() => setConfirmLog(log)}
+                          disabled={revertingId === log.id}
+                          className="text-[11px] text-muted-foreground hover:text-bad flex items-center gap-1 transition-colors disabled:opacity-50"
+                        >
+                          {revertingId === log.id ? (
+                            <Loader2 className="w-3 h-3 animate-spin" />
+                          ) : (
+                            <RotateCcw className="w-3 h-3" />
+                          )}
+                          Geri al
+                        </button>
+                      )}
+
+                      {view.revertable && locked && !log.reverted_at && (
+                        <span className="text-[11px] text-muted-foreground flex items-center gap-1">
+                          <Lock className="w-3 h-3" /> Dönem kapalı
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </article>
+              );
+            })}
+          </section>
+        ))}
+
+        {groups.length === 0 && !isLoading && (
+          <div className="flex flex-col items-center justify-center py-20 gap-3 text-center px-8">
+            <div className="w-16 h-16 rounded-full bg-muted/50 grid place-items-center">
+              <History className="w-7 h-7 text-muted-foreground/50" />
             </div>
-          )}
-        </div>
+            <p className="text-sm font-medium text-muted-foreground">
+              {filter === "ALL" ? "Henüz kayıt yok" : "Bu türde kayıt yok"}
+            </p>
+            <p className="text-[11px] text-muted-foreground/70 max-w-60 leading-relaxed">
+              Veri girdikçe tüm değişiklikler — geri alma dahil — burada listelenir.
+            </p>
+          </div>
+        )}
       </div>
 
-      {/* Geri Alma Açıklama Modalı */}
-      <Dialog
-        open={!!confirmLog}
-        onOpenChange={(open) => {
-          if (!open) setConfirmLog(null);
-        }}
-      >
-        <DialogContent className="max-w-md w-[95vw] rounded-sheet p-6 border-none shadow-2xl bg-background">
-          <DialogHeader className="mb-4">
-            <DialogTitle className="text-base font-semibold flex items-center gap-2">
-              <RotateCcw className="w-5 h-5 text-bad" />
-              İşlemi Geri Almak İstiyor Musunuz?
-            </DialogTitle>
-            <DialogDescription className="text-xs text-muted-foreground mt-1">
-              Bu işlem veritabanı kayıtlarında geriye dönük değişiklik yapacaktır.
-            </DialogDescription>
+      {/* Geri alma onayı */}
+      <Dialog open={!!confirmLog} onOpenChange={(open) => !open && setConfirmLog(null)}>
+        <DialogContent className="w-[90%] max-w-sm rounded-sheet p-6 border-none shadow-2xl">
+          <DialogHeader className="mb-1">
+            <DialogTitle className="text-base font-semibold">İşlemi geri al</DialogTitle>
           </DialogHeader>
 
-          {confirmLog && (
-            <div className="space-y-4">
-              <div className="p-4 rounded-card bg-rose-500/5 border border-rose-500/15 space-y-2">
-                <div className="flex items-start gap-2.5">
-                  <AlertCircle className="w-4 h-4 text-bad mt-0.5 shrink-0" />
-                  <div>
-                    <h4 className="text-[13px] font-medium text-bad  ">Yapılacak Değişiklik</h4>
-                    <p className="text-[13px] leading-relaxed text-muted-foreground mt-1 font-medium">
-                      {getRevertDescription(confirmLog)}
-                    </p>
-                  </div>
-                </div>
+          {confirmView && (
+            <>
+              <div className="rounded-control bg-muted/50 px-3 py-2.5 my-2">
+                <p className="text-[13px] font-medium">{confirmView.title}</p>
+                {confirmView.subtitle && (
+                  <p className="text-[11px] text-muted-foreground mt-0.5">{confirmView.subtitle}</p>
+                )}
               </div>
-
-              <div className="flex gap-3">
-                <button
-                  onClick={() => setConfirmLog(null)}
-                  className="flex-1 h-12 rounded-control text-xs font-bold bg-muted hover:bg-muted/70 active:scale-95 transition-all"
-                >
-                  İptal Et
-                </button>
-                <button
-                  onClick={async () => {
-                    const log = confirmLog;
-                    setConfirmLog(null);
-                    await handleRevert(log);
-                  }}
-                  className="flex-1 h-12 rounded-control text-[13px] font-medium bg-bad text-on-bad shadow-sm hover:opacity-90 active:scale-95 transition-all flex items-center justify-center gap-1.5"
-                >
-                  <RotateCcw className="w-3.5 h-3.5" />
-                  Geri Al ve Yenile
-                </button>
-              </div>
-            </div>
+              <p className="text-[13px] text-muted-foreground leading-relaxed">
+                Bu kayıt eski hâline döndürülecek. İşlem denetim geçmişine yazılır ve kayıt
+                silinmez, «geri alındı» olarak işaretlenir.
+              </p>
+              {confirmLog && isLocked(confirmLog) && (
+                <p className="text-[12px] text-bad mt-2">
+                  {formatPeriod(
+                    periodOf(
+                      parseLogData(confirmLog.old_data)?.date ??
+                        parseLogData(confirmLog.new_data)?.date ??
+                        "",
+                    ),
+                  )}{" "}
+                  dönemi kapalı — önce açmanız gerekir.
+                </p>
+              )}
+            </>
           )}
+
+          <div className="flex gap-3 mt-4">
+            <button
+              className="flex-1 h-11 rounded-control bg-muted/60 text-[13px] font-medium hover:bg-muted"
+              onClick={() => setConfirmLog(null)}
+            >
+              Vazgeç
+            </button>
+            <button
+              className="flex-1 h-11 rounded-control bg-bad text-on-bad text-[13px] font-medium disabled:opacity-60"
+              disabled={revertingId !== null}
+              onClick={() => confirmLog && handleRevert(confirmLog)}
+            >
+              {revertingId !== null ? "Geri alınıyor..." : "Geri al"}
+            </button>
+          </div>
         </DialogContent>
       </Dialog>
     </div>

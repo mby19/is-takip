@@ -120,7 +120,7 @@ export function ToastContainer() {
   return createPortal(
     <div className="fixed bottom-25 left-1/2 -translate-x-1/2 z-9999 flex flex-col gap-2 w-[90vw] max-w-sm pointer-events-none">
       {toasts.map((t, i) => (
-        <div key={t.id} className="animate-slide-up" style={{ animationDelay: `${i * 60}ms` }}>
+        <div key={t.id} className="animate-pop-in" style={{ animationDelay: `${i * 60}ms` }}>
           <ToastItem {...t} onRemove={removeToast} />
         </div>
       ))}

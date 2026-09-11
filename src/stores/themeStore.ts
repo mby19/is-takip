@@ -1,6 +1,14 @@
 import { create } from "zustand";
 
-export type ThemePalette = "ocean" | "forest" | "sunset" | "mono" | "midnight";
+export type ThemePalette =
+  | "ocean"
+  | "forest"
+  | "sunset"
+  | "mono"
+  | "midnight"
+  | "graphite"
+  | "plum"
+  | "mint";
 
 export const PALETTE_NAMES: Record<ThemePalette, string> = {
   ocean: "Okyanus",
@@ -8,6 +16,9 @@ export const PALETTE_NAMES: Record<ThemePalette, string> = {
   sunset: "Günbatımı",
   mono: "Tek Renk",
   midnight: "Gece Yarısı",
+  graphite: "Grafit",
+  plum: "Erik",
+  mint: "Nane",
 };
 
 export const PALETTE_PREVIEW: Record<ThemePalette, { primary: string; bg: string }> = {
@@ -16,7 +27,12 @@ export const PALETTE_PREVIEW: Record<ThemePalette, { primary: string; bg: string
   sunset: { primary: "#e8973b", bg: "#f6f0ec" },
   mono: { primary: "#a0a4af", bg: "#fafafa" },
   midnight: { primary: "#8b6ee0", bg: "#f5f6fa" },
+  graphite: { primary: "#1f6fb8", bg: "#f7f8fa" },
+  plum: { primary: "#a52a63", bg: "#faf6f9" },
+  mint: { primary: "#177a63", bg: "#f5f9fa" },
 };
+
+export const PALETTE_KEYS = Object.keys(PALETTE_NAMES) as ThemePalette[];
 
 interface ThemeStore {
   mode: "light" | "dark";
@@ -39,7 +55,7 @@ const getInitialMode = (): "light" | "dark" => {
 
 const getInitialPalette = (): ThemePalette => {
   const stored = localStorage.getItem("theme-palette");
-  if (["ocean", "forest", "sunset", "mono", "midnight"].includes(stored || "")) {
+  if (PALETTE_KEYS.includes((stored || "") as ThemePalette)) {
     return stored as ThemePalette;
   }
   return "ocean";
