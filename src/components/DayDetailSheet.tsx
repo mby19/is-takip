@@ -41,10 +41,10 @@ const SEGMENTS: {
   icon: typeof Check;
   active: string;
 }[] = [
-  { status: "FULL", label: "Tam", icon: Check, active: "bg-ok text-white" },
-  { status: "HALF", label: "Yarım", icon: Minus, active: "bg-warn text-white" },
-  { status: "ABSENT", label: "Yok", icon: X, active: "bg-bad text-white" },
-  { status: "HOLIDAY", label: "İzin", icon: Palmtree, active: "bg-info text-white" },
+  { status: "FULL", label: "Tam", icon: Check, active: "bg-ok text-on-ok" },
+  { status: "HALF", label: "Yarım", icon: Minus, active: "bg-warn text-on-warn" },
+  { status: "ABSENT", label: "Yok", icon: X, active: "bg-bad text-on-bad" },
+  { status: "HOLIDAY", label: "İzin", icon: Palmtree, active: "bg-info text-on-info" },
 ];
 
 const money = (n: number) => `₺${Math.round(n).toLocaleString("tr-TR")}`;
@@ -285,7 +285,7 @@ export function DayDetailSheet({ isOpen, onClose, dateStr }: DayDetailSheetProps
                 disabled={isClosed}
                 className={`shrink-0 h-9 px-3 rounded-control text-[12px] font-medium flex items-center gap-1.5 transition-all active:scale-95 disabled:opacity-50 ${
                   isHoliday
-                    ? "bg-info text-white"
+                    ? "bg-info text-on-info"
                     : "bg-muted/60 text-muted-foreground hover:text-foreground"
                 }`}
               >
@@ -533,7 +533,7 @@ export function DayDetailSheet({ isOpen, onClose, dateStr }: DayDetailSheetProps
               Düzenlemeye dön
             </button>
             <button
-              className="flex-1 h-11 rounded-control bg-bad text-white text-[13px] font-medium"
+              className="flex-1 h-11 rounded-control bg-bad text-on-bad text-[13px] font-medium"
               onClick={() => {
                 setConfirmDiscard(false);
                 setIsDirty(false);

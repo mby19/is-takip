@@ -642,7 +642,7 @@ export function AuditLogView({ onBack }: { onBack: () => void }) {
                     setConfirmLog(null);
                     await handleRevert(log);
                   }}
-                  className="flex-1 h-12 rounded-control text-[13px] font-medium bg-rose-500 text-white shadow-lg shadow-rose-500/20 hover:bg-rose-600 active:scale-95 transition-all flex items-center justify-center gap-1.5"
+                  className="flex-1 h-12 rounded-control text-[13px] font-medium bg-bad text-on-bad shadow-sm hover:opacity-90 active:scale-95 transition-all flex items-center justify-center gap-1.5"
                 >
                   <RotateCcw className="w-3.5 h-3.5" />
                   Geri Al ve Yenile

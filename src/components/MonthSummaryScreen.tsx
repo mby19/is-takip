@@ -24,6 +24,8 @@ import { calculateDailyEarnings, rateResolverFor } from "../utils/earningsCalcul
 import { periodOfDate, formatPeriod } from "../lib/period";
 import type { Attendance, DailyMetric, Payment, Worker, AttendanceStatus } from "../types";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "./ui/dialog";
+import { WorkerAvatar } from "./ui/worker-avatar";
+import { workerInitials } from "../utils/initials";
 
 interface MonthSummaryScreenProps {
   onWorkerClick: (worker: Worker) => void;
@@ -146,6 +148,8 @@ export function MonthSummaryScreen({ onWorkerClick }: MonthSummaryScreenProps) {
         .sort((a, b) => b.stats.periodBalance - a.stats.periodBalance),
     [relevantWorkers, currentMonth, metrics, attendance, payments, rateHistory],
   );
+
+  const initials = useMemo(() => workerInitials(relevantWorkers), [relevantWorkers]);
 
   const totals = useMemo(
     () =>
@@ -293,13 +297,11 @@ export function MonthSummaryScreen({ onWorkerClick }: MonthSummaryScreenProps) {
                       className="w-full flex items-center justify-between px-3.5 py-3 gap-3 text-left hover:bg-muted/40 active:bg-muted/60 transition-colors"
                     >
                       <div className="flex items-center gap-2.5 min-w-0">
-                        <div
-                          className={`w-8 h-8 rounded-lg flex items-center justify-center font-bold text-xs text-white shrink-0 ${
-                            worker.worker_type === "ORTAK" ? "bg-warn" : "bg-primary"
-                          }`}
-                        >
-                          {worker.name.charAt(0).toUpperCase()}
-                        </div>
+                        <WorkerAvatar
+                          name={worker.name}
+                          type={worker.worker_type}
+                          initials={initials.get(worker.id)}
+                        />
                         <div className="min-w-0">
                           <p className="font-bold text-[13px] leading-tight truncate">
                             {worker.name}
@@ -379,7 +381,7 @@ export function MonthSummaryScreen({ onWorkerClick }: MonthSummaryScreenProps) {
               Vazgeç
             </button>
             <button
-              className={`flex-1 h-12 rounded-control text-white font-bold text-xs shadow-md disabled:opacity-60 ${
+              className={`flex-1 h-12 rounded-control font-semibold text-xs shadow-sm disabled:opacity-60 ${
                 isClosed ? "bg-amber-500 shadow-amber-500/20" : "bg-sky-500 shadow-sky-500/20"
               }`}
               onClick={toggleLock}

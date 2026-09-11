@@ -25,6 +25,7 @@ import type { Worker, Payment, Attendance, DailyMetric } from "../types";
 import { calculateWorkerStats } from "../utils/calculations";
 import { exportWorkerReport } from "../lib/workerReport";
 import { DetailSkeleton } from "./ui/skeleton";
+import { WorkerAvatar } from "./ui/worker-avatar";
 import {
   Dialog,
   DialogContent,
@@ -184,13 +185,7 @@ export function WorkerDetailView({ worker, onBack }: WorkerDetailViewProps) {
         >
           <ArrowLeft className="w-5 h-5" />
         </button>
-        <div
-          className={`w-10 h-10 rounded-full grid place-items-center text-[15px] font-semibold text-white shrink-0 ${
-            worker.worker_type === "ORTAK" ? "bg-warn" : "bg-primary"
-          }`}
-        >
-          {worker.name.charAt(0).toUpperCase()}
-        </div>
+        <WorkerAvatar name={worker.name} type={worker.worker_type} size="md" />
         <div className="min-w-0 flex-1">
           <h1 className="text-[17px] font-semibold tracking-tight truncate">
             {worker.name}{" "}
@@ -270,7 +265,7 @@ export function WorkerDetailView({ worker, onBack }: WorkerDetailViewProps) {
                   aria-pressed={editType === "ORTAK"}
                   className={`flex-1 h-11 rounded-xl font-bold text-xs transition-all ${
                     editType === "ORTAK"
-                      ? "bg-amber-500 text-white shadow-md shadow-amber-500/20"
+                      ? "bg-warn text-on-warn shadow-md shadow-amber-500/20"
                       : "bg-muted text-muted-foreground"
                   }`}
                 >
@@ -791,7 +786,7 @@ export function WorkerDetailView({ worker, onBack }: WorkerDetailViewProps) {
                   Vazgeç
                 </button>
                 <button
-                  className="flex-1 h-12 rounded-xl bg-rose-500 text-white font-bold text-xs shadow-md shadow-rose-500/20"
+                  className="flex-1 h-12 rounded-control bg-bad text-on-bad font-semibold text-xs shadow-sm"
                   onClick={async () => {
                     if (!paymentToDelete) return;
                     try {
@@ -842,7 +837,7 @@ export function WorkerDetailView({ worker, onBack }: WorkerDetailViewProps) {
                       Vazgeç
                     </Button>
                     <Button
-                      className="flex-1 h-12 rounded-xl bg-rose-500 hover:bg-rose-600 text-white font-bold text-xs shadow-md shadow-rose-500/20"
+                      className="flex-1 h-12 rounded-control bg-bad text-on-bad hover:opacity-90 font-semibold text-xs shadow-sm"
                       onClick={async () => {
                         try {
                           await archiveWorker(worker.id);

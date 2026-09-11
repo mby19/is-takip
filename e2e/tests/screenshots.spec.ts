@@ -18,10 +18,10 @@ const d = (n: number) => `${P}-${String(n).padStart(2, "0")}`;
 
 const SEED = `
   INSERT INTO workers (name, daily_wage, worker_type, is_active) VALUES
-    ('Ahmet Yılmaz', 900, 'GUNLUK', 1),
-    ('Mehmet Demir', 0, 'ORTAK', 1),
-    ('Hasan Kaya', 750, 'GUNLUK', 1),
-    ('Emre Şahin', 800, 'GUNLUK', 1),
+    ('Mehmet Demir', 900, 'GUNLUK', 1),
+    ('Murat Kaya', 0, 'ORTAK', 1),
+    ('Hasan Çelik', 750, 'GUNLUK', 1),
+    ('Metin Aydın', 800, 'GUNLUK', 1),
     ('Osman Çelik', 0, 'ORTAK', 0);
   INSERT INTO worker_rate_history (worker_id, valid_from, daily_wage, worker_type)
     SELECT id, '2000-01-01', daily_wage, worker_type FROM workers;
@@ -60,7 +60,7 @@ test("ekran görüntüleri", async ({ page, db }) => {
   await page.getByRole("button", { name: "Kişiler" }).click();
   await shot("03-kisiler");
 
-  await page.getByText("Ahmet Yılmaz").first().click();
+  await page.getByText("Mehmet Demir").first().click();
   await shot("04-calisan-detay");
   await page.getByRole("button", { name: "Geri" }).click();
 

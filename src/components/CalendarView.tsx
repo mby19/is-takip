@@ -20,6 +20,8 @@ import type { DailyMetric, Attendance, Worker, AttendanceStatus } from "../types
 import { calculateDailyEarnings, rateResolverFor } from "../utils/earningsCalculator";
 import { useAnimatedCounter } from "../hooks/useAnimatedCounter";
 import { periodOfDate } from "../lib/period";
+import { workerInitials } from "../utils/initials";
+import { WorkerAvatar } from "./ui/worker-avatar";
 
 interface CalendarViewProps {
   currentDate: Date;
@@ -216,6 +218,10 @@ export function CalendarView({ currentDate, onDayClick, onWorkerClick }: Calenda
     () => [...activeWorkers, ...archivedWithData],
     [activeWorkers, archivedWithData],
   );
+
+  // Sütun başlıkları isim değil baş harf gösteriyor; aynı harfle başlayan
+  // iki kişide sütunlar ayırt edilemez olmasın diye küme içinde benzersizleşir.
+  const initials = useMemo(() => workerInitials(activeWorkers), [activeWorkers]);
 
   useEffect(() => {
     // Aralık burada hesaplanır: startOfMonth/endOfMonth her render'da yeni Date
@@ -455,13 +461,12 @@ export function CalendarView({ currentDate, onDayClick, onWorkerClick }: Calenda
               style={WORKER_CELL}
               className="py-1.5 grid place-items-center active:scale-90 transition-transform"
             >
-              <span
-                className={`w-6 h-6 rounded-full grid place-items-center text-[11px] font-semibold text-white ${
-                  w.worker_type === "ORTAK" ? "bg-warn" : "bg-primary"
-                }`}
-              >
-                {w.name.trim().charAt(0).toLocaleUpperCase("tr-TR")}
-              </span>
+              <WorkerAvatar
+                name={w.name}
+                type={w.worker_type}
+                size="xs"
+                initials={initials.get(w.id)}
+              />
             </button>
           ))}
           <button

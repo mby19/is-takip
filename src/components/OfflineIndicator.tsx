@@ -20,7 +20,7 @@ export function OfflineIndicator() {
   if (isOnline) return null;
 
   return (
-    <div className="fixed top-0 left-0 right-0 z-[100] bg-amber-500 text-white px-4 py-2 flex items-center justify-center gap-2 text-xs font-bold">
+    <div className="fixed top-0 left-0 right-0 z-[100] bg-warn text-on-warn px-4 py-2 flex items-center justify-center gap-2 text-xs font-bold">
       <WifiOff className="w-4 h-4" />
       Çevrimdışı — Değişiklikler senkronize edilemez
     </div>

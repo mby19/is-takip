@@ -214,7 +214,7 @@ export function LockSetupWizard() {
             className={`h-9 px-4 rounded-control text-[11px] font-medium transition-all duration-200 active:scale-95 ${
               isLockEnabled
                 ? "bg-rose-50 hover:bg-rose-100 dark:bg-bad-soft text-bad hover:text-rose-600 border border-transparent hover:border-rose-200"
-                : "bg-primary hover:bg-primary/95 text-white shadow-md shadow-primary/10"
+                : "bg-primary hover:bg-primary/95 text-primary-foreground shadow-sm"
             }`}
           >
             {isLockEnabled ? "Kilidi Kapat" : "Etkinleştir"}
@@ -466,7 +466,7 @@ export function LockSetupWizard() {
               </div>
 
               <Button
-                className="w-full h-12 rounded-control text-[13px] font-medium bg-ok shadow-sm"
+                className="w-full h-12 rounded-control text-[13px] font-medium bg-ok text-on-ok shadow-sm"
                 onClick={() => {
                   setIsLockSetupOpen(false);
                   setSetupStep(1);

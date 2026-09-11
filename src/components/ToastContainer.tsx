@@ -76,9 +76,9 @@ function ToastItem({
         ${exiting ? "opacity-0 translate-y-2 scale-95" : "opacity-100 translate-y-0 scale-100"}
         ${
           type === "success"
-            ? "bg-ok text-white"
+            ? "bg-ok text-on-ok"
             : type === "error"
-              ? "bg-bad text-white"
+              ? "bg-bad text-on-bad"
               : "bg-foreground text-background"
         }
       `}

@@ -342,7 +342,7 @@ export function BackupSection() {
                   Vazgeç
                 </button>
                 <button
-                  className="w-2/3 rounded-card h-12 font-semibold text-white bg-bad shadow-sm transition-all active:scale-[0.97] text-xs flex items-center justify-center gap-2"
+                  className="w-2/3 rounded-card h-12 font-semibold bg-bad text-on-bad shadow-sm transition-all active:scale-[0.97] text-xs flex items-center justify-center gap-2"
                   onClick={executeRestore}
                   disabled={restoring}
                 >
@@ -425,9 +425,9 @@ export function BackupSection() {
                   Vazgeç
                 </button>
                 <button
-                  className={`w-2/3 rounded-card h-12 font-semibold text-white transition-all active:scale-[0.97] text-xs flex items-center justify-center gap-2 ${
+                  className={`w-2/3 rounded-card h-12 font-semibold transition-all active:scale-[0.97] text-xs flex items-center justify-center gap-2 ${
                     deleteInputCode === deleteChallengeCode
-                      ? "bg-bad shadow-sm"
+                      ? "bg-bad text-on-bad shadow-sm"
                       : "bg-muted text-muted-foreground cursor-not-allowed shadow-none"
                   }`}
                   onClick={executeDelete}
@@ -517,7 +517,7 @@ export function BackupSection() {
                             <div
                               className={`w-10 h-10 rounded-control flex items-center justify-center shrink-0 ${
                                 selectedFile === file.name
-                                  ? "bg-primary text-white"
+                                  ? "bg-primary text-primary-foreground"
                                   : "bg-muted text-muted-foreground"
                               }`}
                             >
@@ -537,7 +537,7 @@ export function BackupSection() {
                                 {selectedFile === file.name && (
                                   <div className="w-6 h-6 rounded-full bg-primary flex items-center justify-center">
                                     <svg
-                                      className="w-3.5 h-3.5 text-white"
+                                      className="w-3.5 h-3.5"
                                       fill="none"
                                       viewBox="0 0 24 24"
                                       stroke="currentColor"
@@ -601,7 +601,7 @@ export function BackupSection() {
                       İptal
                     </button>
                     <button
-                      className={`w-2/3 rounded-card h-12 font-semibold text-white shadow-lg transition-all active:scale-[0.97] text-sm flex items-center justify-center gap-2 ${
+                      className={`w-2/3 rounded-card h-12 font-semibold shadow-lg transition-all active:scale-[0.97] text-sm flex items-center justify-center gap-2 ${
                         selectedFile
                           ? "bg-linear-to-r from-rose-500 to-rose-600 shadow-rose-500/20"
                           : "bg-muted text-muted-foreground cursor-not-allowed shadow-none"

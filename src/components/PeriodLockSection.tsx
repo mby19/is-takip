@@ -99,7 +99,7 @@ export function PeriodLockSection() {
                 aria-label={`${formatPeriod(period)} dönemini ${locked ? "aç" : "kapat"}`}
                 className={`shrink-0 h-9 px-3 rounded-control border text-[11px] font-medium flex items-center gap-1.5 transition-all active:scale-95 ${
                   locked
-                    ? "bg-sky-500 text-white border-sky-500 shadow-sm shadow-sky-500/20"
+                    ? "bg-info text-on-info border-sky-500 shadow-sm shadow-sky-500/20"
                     : "bg-transparent text-muted-foreground border-border hover:bg-muted"
                 }`}
               >
@@ -153,7 +153,7 @@ export function PeriodLockSection() {
               Vazgeç
             </button>
             <button
-              className={`flex-1 h-12 rounded-control text-white font-bold text-xs shadow-md disabled:opacity-60 ${
+              className={`flex-1 h-12 rounded-control font-semibold text-xs shadow-sm disabled:opacity-60 ${
                 pending?.action === "close"
                   ? "bg-sky-500 shadow-sky-500/20"
                   : "bg-amber-500 shadow-amber-500/20"
