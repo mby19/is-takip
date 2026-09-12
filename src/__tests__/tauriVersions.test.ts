@@ -42,6 +42,8 @@ describe("Tauri sürüm tutarlılığı", () => {
       ["@tauri-apps/plugin-fs", "tauri-plugin-fs"],
       ["@tauri-apps/plugin-dialog", "tauri-plugin-dialog"],
       ["@tauri-apps/plugin-opener", "tauri-plugin-opener"],
+      ["@tauri-apps/plugin-notification", "tauri-plugin-notification"],
+      ["@tauri-apps/plugin-deep-link", "tauri-plugin-deep-link"],
     ];
     for (const [npmName, crateName] of pairs) {
       const version = npmVersion(npmName);

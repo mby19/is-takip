@@ -6,6 +6,8 @@ import { useThemeStore } from "../stores/themeStore";
 import { CalendarView } from "./CalendarView";
 import { SpinWheelDialog } from "./SpinWheelDialog";
 import { MonthPickerDialog } from "./MonthPickerDialog";
+import { ReminderBanner } from "./ReminderBanner";
+import { todayKey } from "../lib/period";
 import type { Worker } from "../types";
 
 interface CalendarScreenProps {
@@ -76,6 +78,8 @@ export function CalendarScreen({ onDayClick, onWorkerClick }: CalendarScreenProp
         value={currentDate}
         onSelect={setCurrentDate}
       />
+
+      <ReminderBanner onOpenToday={() => onDayClick(todayKey())} />
 
       <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
         <CalendarView

@@ -38,5 +38,17 @@
     "category": "Business",
     "shortDescription": "İnşaat sahası personel takip uygulaması",
     "longDescription": "Bir inşaat/üretim sahasında çalışan personelin günlük devam durumunu, üretim miktarını ve ödemelerini takip etmek için geliştirilmiş masaüstü uygulaması."
+  },
+  "plugins": {
+    "deep-link": {
+      "mobile": [
+        {
+          "scheme": [
+            "istakip"
+          ],
+          "host": "bugun"
+        }
+      ]
+    }
   }
 }

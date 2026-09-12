@@ -38,6 +38,8 @@ Bir inşaat/üretim sahasında çalışan personelin günlük devam durumunu, ü
 | Styling        | Tailwind CSS v4 + `tailwind-merge` + `class-variance-authority` |
 | State          | Zustand v5 (store'lar)                                          |
 | DB             | SQLite (`@tauri-apps/plugin-sql`)                               |
+| Bildirim       | `@tauri-apps/plugin-notification` (günlük hatırlatma)           |
+| Derin bağlantı | `@tauri-apps/plugin-deep-link` (`istakip://bugun` kısayolu)     |
 | Grafik         | Recharts                                                        |
 | PDF            | jsPDF + jspdf-autotable                                         |
 | Tarih          | date-fns (locale: tr)                                           |
@@ -112,6 +114,9 @@ Her domain entity'si için ayrı bir Zustand store'u var. Store'lar state + repo
 - `paymentStore` — ödeme kaydı
 - `auditLogStore` — denetim kaydı görüntüleme + geri alma
 - `toastStore` — bildirim mesajları
+- `periodStore` — dönem kilidi
+- `reminderStore` — günlük hatırlatma ayarı (cihaza özel, localStorage)
+- `themeStore` — tema ve palet
 
 ### Key Patterns
 
@@ -120,3 +125,4 @@ Her domain entity'si için ayrı bir Zustand store'u var. Store'lar state + repo
 3. **Audit Logging (JS-managed triggers)**: Tüm INSERT/UPDATE/DELETE işlemleri SQLite trigger'ları ile otomatik kaydedilir. Trigger'lar JS tarafında (`src/schema/triggers.ts`) tanımlıdır ve her boot'ta yeniden oluşturulur. Detay: [ADR 0003](docs/adr/0003-tetikleyici-yonetimi.md).
 4. **Soft Delete**: Çalışanlar `is_active = 0` ile pasifleştirilir, veri bütünlüğü korunur.
 5. **Single-context veritabanı**: Tüm veri tek bir SQLite dosyasında (`is_takip_v3.db`), WAL modu aktif.
+6. **Günlük hatırlatma**: Önümüzdeki 14 gün tek tek zamanlanır; uygulama her açıldığında yeniden kurulur ve verisi girilmiş gün atlanır. Detay: [ADR 0008](docs/adr/0008-gunluk-hatirlatma-ve-kisayol.md).

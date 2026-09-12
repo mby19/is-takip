@@ -21,6 +21,15 @@
     "fs:allow-remove",
     "dialog:default",
     "dialog:allow-save",
-    "fs:allow-write-file"
+    "fs:allow-write-file",
+    "notification:default",
+    "notification:allow-notify",
+    "notification:allow-request-permission",
+    "notification:allow-is-permission-granted",
+    "notification:allow-cancel",
+    "notification:allow-register-action-types",
+    "notification:allow-create-channel",
+    "notification:allow-get-pending",
+    "deep-link:default"
   ]
 }

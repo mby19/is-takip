@@ -29,9 +29,27 @@ export function initErrorMonitoring() {
   });
 }
 
+/**
+ * Konsola tek satır olarak yazılabilen özet. Nesneler `[object Object]` olarak
+ * düşmesin diye ayrı tutuldu — cihaz logunda okunabilen tek şey bu satır.
+ */
+const describe = (error: unknown): string => {
+  if (error instanceof Error) return `${error.name}: ${error.message}`;
+  try {
+    return JSON.stringify(error);
+  } catch {
+    return String(error);
+  }
+};
+
 // Manual error reporting
 export function reportError(error: Error, context?: Record<string, unknown>) {
-  if (!errorMonitoring.enabled) return;
+  // Sentry kapalıyken hata tamamen kayboluyordu; en azından konsola düşsün —
+  // cihazdan `adb logcat` ile okunabilen tek iz bu.
+  if (!errorMonitoring.enabled) {
+    console.error(`[reportError] ${describe(error)} ${JSON.stringify(context ?? {})}`);
+    return;
+  }
 
   import("@sentry/react").then((Sentry) => {
     Sentry.withScope((scope) => {

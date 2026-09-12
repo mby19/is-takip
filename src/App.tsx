@@ -10,6 +10,8 @@ import { getDb } from "./lib/db";
 import { isLockEnabled } from "./lib/appLock";
 import { reportError } from "./lib/errorMonitoring";
 import { pruneAuditLogs } from "./lib/retention";
+import { todayKey } from "./lib/period";
+import { useReminders } from "./hooks/useReminders";
 import { Button } from "./components/ui/button";
 import { useWorkerStore } from "./stores/workerStore";
 import { usePeriodStore } from "./stores/periodStore";
@@ -130,6 +132,8 @@ function App() {
     root.classList.toggle("dark", themeMode === "dark");
     root.setAttribute("data-palette", themePalette);
   }, [themeMode, themePalette]);
+
+  useReminders({ ready: dbReady, onOpenToday: () => setSelectedDate(todayKey()) });
 
   const fetchWorkers = useWorkerStore((s) => s.fetchWorkers);
   const fetchRateHistory = useWorkerStore((s) => s.fetchRateHistory);

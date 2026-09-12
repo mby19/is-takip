@@ -14,6 +14,7 @@ import { Button } from "./ui/button";
 import { BackupSection } from "./BackupSection";
 import { LockSetupWizard } from "./LockSetupWizard";
 import { PeriodLockSection } from "./PeriodLockSection";
+import { ReminderSection } from "./ReminderSection";
 import { getTriggerSetupError, getSchemaReport } from "../lib/db";
 import { APP_VERSION } from "../lib/appInfo";
 
@@ -199,6 +200,8 @@ export function SettingsView({
 
           <LockSetupWizard />
         </div>
+
+        <ReminderSection />
 
         <PeriodLockSection />
 

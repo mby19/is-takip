@@ -10,6 +10,15 @@ export type PeriodKey = string;
 /** `2026-05-10` veya `2026-05` girdisinden dönem anahtarı üretir. */
 export const periodOf = (dateStr: string): PeriodKey => String(dateStr).trim().slice(0, 7);
 
+/** Date nesnesinden `YYYY-MM-DD` gün anahtarı — puantaj kayıtlarının tarih biçimi. */
+export const dayKey = (date: Date): string =>
+  `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(
+    date.getDate(),
+  ).padStart(2, "0")}`;
+
+/** Bugünün gün anahtarı. */
+export const todayKey = (): string => dayKey(new Date());
+
 /** Date nesnesinden dönem anahtarı. */
 export const periodOfDate = (date: Date): PeriodKey =>
   `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
