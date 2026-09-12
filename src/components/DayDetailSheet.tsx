@@ -372,13 +372,6 @@ export function DayDetailSheet({ isOpen, onClose, dateStr }: DayDetailSheetProps
                 </span>
               </div>
 
-              {calculations.netProfit < 0 && (
-                <p className="mt-2 text-[12px] text-bad leading-relaxed">
-                  Bu gün zararda. Zarar, çalışan ortaklar arasında gün ağırlığına göre
-                  paylaştırılıyor.
-                </p>
-              )}
-
               {/* Puantaj */}
               <div className="mt-5 flex items-center justify-between gap-2">
                 <h3 className="text-[13px] font-medium text-muted-foreground">Puantaj</h3>

@@ -24,18 +24,18 @@ let triggerSetupError: string | null = null;
 export const getTriggerSetupError = (): string | null => triggerSetupError;
 
 /** Açılışta yapılan şema onarımlarının raporu — Ayarlar ekranında gösterilir. */
-let schemaReport: SchemaRepairReport = { repaired: [], failures: [] };
+let schemaReport: SchemaRepairReport = { repaired: [], failures: [], triggersDropped: false };
 export const getSchemaReport = (): SchemaRepairReport => schemaReport;
 
 /**
  * Tetikleyicileri yalnızca tanımlar değiştiğinde yeniden kurar.
  * Sürüm damgası `PRAGMA user_version` içinde tutulur.
  */
-const ensureTriggers = async (d: DatabaseInstance): Promise<void> => {
+const ensureTriggers = async (d: DatabaseInstance, force = false): Promise<void> => {
   const rows = await d.select<{ user_version: number }>("PRAGMA user_version;");
   const installed = Number(rows?.[0]?.user_version ?? 0);
 
-  if (installed === TRIGGER_SCHEMA_VERSION) return;
+  if (!force && installed === TRIGGER_SCHEMA_VERSION) return;
 
   const script = buildTransactionScript([
     ...DROP_TRIGGERS,
@@ -81,7 +81,9 @@ export const getDb = async (): Promise<DatabaseInstance> => {
         }
 
         try {
-          await ensureTriggers(d);
+          // Onarım tetikleyicileri düşürdüyse sürüm damgası güncel görünse de
+          // yeniden kurulmaları gerekir.
+          await ensureTriggers(d, schemaReport.triggersDropped);
           triggerSetupError = null;
         } catch (err: unknown) {
           // Tetikleyici kurulumu başarısız oldu. Uygulama çalışmaya devam eder
