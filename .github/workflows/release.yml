@@ -5,6 +5,14 @@ on:
     tags:
       - "v*"
 
+  # Not — action pin'leme: tüm `uses:` referansları 40 karakterlik commit
+  # SHA'sına sabitlenmiştir (ci.yml ile birebir aynı SHA'lar kullanılır),
+  # yorum satırında sürüm etiketi durur. Seçilen sürümlerin `runs.using`
+  # alanı `node24`'tür — GitHub 2026-09-23'te node20 runtime'ını runner'lardan
+  # kaldırdığı için node20 kullanan her action bu workflow'da çalışamazdı.
+  # Dependabot `github-actions` ekosistemi SHA'ları güncellediği için sürüm
+  # takibinden vazgeçmek anlamına gelmez; yorumdaki etiket de güncellenir.
+
 permissions:
   contents: write
 
@@ -15,9 +23,9 @@ jobs:
     outputs:
       release_id: ${{ steps.create_release.outputs.id }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - id: create_release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@e598afbe1493e6b1bafb1f389cabb956eab91231 # v3.0.3
         with:
           draft: true
           generate_release_notes: true
@@ -39,30 +47,40 @@ jobs:
             target: x86_64-pc-windows-msvc
     runs-on: ${{ matrix.platform }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020f # v7.0.0
         with:
           node-version: 22
           cache: npm
 
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@7e38f4b43b4db5c8dd498af069a4f6196df1d067 # v1
         with:
           targets: ${{ matrix.target }}
 
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           workspaces: src-tauri
 
       - run: npm ci
+      # Apple notarization. Tauri yalnızca macOS işinde bu değerleri okur;
+      # secret'lar yoksa build imzasız .app/.dmg üretmeye devam eder
+      # (kullanıcıda "Uygulama açılamıyor" hatası verir) — eksikliği
+      # `docs/release-rehberi.md` anlatır.
       - run: npx tauri build --target ${{ matrix.target }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          # Windows kod imzalama (SmartScreen uyarısını kaldırır).
+          TAURI_SIGNING_WINDOWS_CERTIFICATE: ${{ secrets.TAURI_SIGNING_WINDOWS_CERTIFICATE }}
+          TAURI_SIGNING_WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.TAURI_SIGNING_WINDOWS_CERTIFICATE_PASSWORD }}
 
       - name: Upload to Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@e598afbe1493e6b1bafb1f389cabb956eab91231 # v3.0.3
         with:
           tag_name: ${{ github.ref_name }}
           draft: true
@@ -75,35 +93,104 @@ jobs:
             src-tauri/target/${{ matrix.target }}/release/bundle/**/*.AppImage
             src-tauri/target/${{ matrix.target }}/release/bundle/**/*.tar.gz
 
+      # Updater manifesti (latest.json) RELEASE'E YÜKLENMEZ: her matrix işi
+      # kendi platformunun latest.json'unu üretir ve aynı adda yüklesiydi
+      # son yükleyen kazanır, diğer platformların imzaları kaybolurdu.
+      # Tek bir birleşik manifest `updater-manifest` işinde üretilir.
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: updater-${{ matrix.target }}
+          path: src-tauri/target/${{ matrix.target }}/release/bundle/**/*.latest.json
+          retention-days: 1
+
+  updater-manifest:
+    name: Birleşik updater manifesti (latest.json)
+    needs: [create-release, build-tauri]
+    runs-on: ubuntu-latest
+    # Tek bir statik uç noktaya (`releases/latest/download/latest.json`) birden
+    # fazla platform imzası taşıyan TEK manifest gerekir: uygulama kendi
+    # platformunun `platforms` girdisini seçer. Matrix işlerinin ayrı ayrı
+    # yüklediği manifestler son yüklenenle ezildiği için diğer platformlar
+    # güncelleme ararken "bulunamadı" hatası alırdı.
+    steps:
+      # `merge-multiple` YOK: her artifact aynı dosya adını (latest.json)
+      # taşıyor, tek dizine düzleştirilince ad çakışması son yüklenenin
+      # üzerine yazıyor, yine tek platform kalıyor. Her artifact kendi
+      # alt dizinine indirilir, ağaç özyinelemeli gezilir.
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: updater-*
+          path: manifests
+
+      - name: Birleştir
+        run: |
+          node -e '
+          const fs = require("fs"), path = require("path");
+          const walk = (d) => fs.readdirSync(d, { withFileTypes: true }).flatMap((e) => {
+            const p = path.join(d, e.name);
+            return e.isDirectory() ? walk(p) : [p];
+          });
+          const files = walk("manifests").filter((f) => f.endsWith(".json"));
+          if (!files.length) { console.error("hiç latest.json bulunamadı"); process.exit(1); }
+          let merged = null;
+          for (const f of files) {
+            const m = JSON.parse(fs.readFileSync(f, "utf8"));
+            if (!m.platforms) continue;
+            if (!merged) merged = { ...m, platforms: {} };
+            if (m.version && merged.version !== m.version) {
+              console.error("sürüm uyuşmazlığı:", merged.version, "vs", m.version); process.exit(1);
+            }
+            Object.assign(merged.platforms, m.platforms);
+          }
+          if (!merged || !Object.keys(merged.platforms).length) {
+            console.error("birleştirilecek platform imzası yok"); process.exit(1);
+          }
+          fs.writeFileSync("latest.json", JSON.stringify(merged, null, 2));
+          console.log("birleşik platformlar:", Object.keys(merged.platforms).join(", "));
+          '
+
+      - name: Upload latest.json to Release
+        uses: softprops/action-gh-release@e598afbe1493e6b1bafb1f389cabb956eab91231 # v3.0.3
+        with:
+          tag_name: ${{ github.ref_name }}
+          draft: true
+          files: latest.json
+
   build-android:
     name: Build & Upload (Android APK)
     needs: create-release
     runs-on: ubuntu-latest
-    # Ana kullanım platformu Android; imzalama sırları tanımlı değilse atlanır.
-    if: ${{ vars.ANDROID_RELEASE_ENABLED == 'true' }}
+    # İmzalama sırları yoksa Android işi ATLANIR. `vars.ANDROID_RELEASE_ENABLED`
+    # repo değişkeni tanımlı değilse koşul hiçbir zaman sağlanmıyordu ve
+    # iş sessizce hiç koşmuyordu (hata bile vermeden). Doğrudan secret
+    # varlığını kontrol etmek: secret yoksa build zaten başarısız olacağı için
+    # koşuyu hiç başlatmıyoruz, varsa koşuyor. Keşif için Settings →
+    # Secrets and variables → Actions → Actions variables'a
+    # ANDROID_RELEASE_ENABLED=true eklenebilir; o zaman yalnız o da yeterli.
+    if: ${{ vars.ANDROID_RELEASE_ENABLED == 'true' || secrets.ANDROID_KEYSTORE_BASE64 != '' }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020f # v7.0.0
         with:
           node-version: 22
           cache: npm
 
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
         with:
           distribution: temurin
           java-version: "17"
 
-      - uses: android-actions/setup-android@v3
+      - uses: android-actions/setup-android@be39fa834029ff78f1a44aa3bb0819b8fc2bd8fd # v4.0.4
 
       - name: Install NDK
         run: sdkmanager "ndk;27.0.11902837"
 
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@7e38f4b43b4db5c8dd498af069a4f6196df1d067 # v1
         with:
           targets: aarch64-linux-android,armv7-linux-androideabi,i686-linux-android,x86_64-linux-android
 
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           workspaces: src-tauri
 
@@ -124,8 +211,77 @@ jobs:
         run: npx tauri android build --apk
 
       - name: Upload to Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@e598afbe1493e6b1bafb1f389cabb956eab91231 # v3.0.3
         with:
           tag_name: ${{ github.ref_name }}
           draft: true
           files: src-tauri/gen/android/app/build/outputs/apk/universal/release/*.apk
+
+  # Play Console AAB (Android App Bundle) İSTER; `--apk` ile üretilen APK
+  # sideload/yan yükleme içindir, mağaza teslimatı için AAB gerekir. İkisi
+  # farklı çıktıdır, ikisi de gereklidir:
+  #   APK → doğrudan kurulum, MDM dağıtımı, hata ayıklama
+  #   AAB → Play Store yüklemesi (Play, APK yüklemeyi kabul etmez)
+  build-android-aab:
+    name: Build & Upload (Android AAB)
+    needs: create-release
+    runs-on: ubuntu-latest
+    # `build-android` ile AYNI koşul. Tek koşulun iki işe birden uygulanması,
+    # "AAB var ama imzasız" gibi yarım bir yayın durumu üretmemek için:
+    # sır yoksa APK da AAB da üretilmez.
+    if: ${{ vars.ANDROID_RELEASE_ENABLED == 'true' || secrets.ANDROID_KEYSTORE_BASE64 != '' }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020f # v7.0.0
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: android-actions/setup-android@be39fa834029ff78f1a44aa3bb0819b8fc2bd8fd # v4.0.4
+
+      - name: Install NDK
+        run: sdkmanager "ndk;27.0.11902837"
+
+      - uses: dtolnay/rust-toolchain@7e38f4b43b4db5c8dd498af069a4f6196df1d067 # v1
+        with:
+          targets: aarch64-linux-android,armv7-linux-androideabi,i686-linux-android,x86_64-linux-android
+
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: src-tauri
+
+      - run: npm ci
+
+      - name: Restore keystore
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          echo "$ANDROID_KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/keystore.jks"
+
+      # İmza `gen/android/app/build.gradle.kts` tarafından bu ortam
+      # değişkenlerinden okunur. Sır yoksa Gradle sessizce debug imzasına
+      # düşmez; net bir GradleException fırlatır (bkz. build.gradle.kts).
+      - name: Build AAB
+        env:
+          NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/27.0.11902837
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          ANDROID_KEY_BASE64_PATH: ${{ runner.temp }}/keystore.jks
+        run: npx tauri android build --aab
+
+      - name: Upload to Release
+        uses: softprops/action-gh-release@e598afbe1493e6b1bafb1f389cabb956eab91231 # v3.0.3
+        with:
+          tag_name: ${{ github.ref_name }}
+          draft: true
+          # `--aab` (split-per-abi olmadan) `bundleUniversalRelease` görevini
+          # çalıştırır ve `.aab` dosyasını `bundle/universalRelease/` altına
+          # yazar (cargo-mobile2 `aab_path`). Desen `**` ile ileride
+          # `--split-per-abi` eklenirse de çalışır.
+          files: src-tauri/gen/android/app/build/outputs/bundle/**/*.aab

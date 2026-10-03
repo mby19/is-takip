@@ -1,12 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 const executeQuery = vi.fn();
+const executeTransaction = vi.fn();
 const fetchQuery = vi.fn();
 
 vi.mock("../lib/db", () => ({
   executeQuery: (...a: unknown[]) => executeQuery(...a),
+  executeTransaction: (...a: unknown[]) => executeTransaction(...a),
   fetchQuery: (...a: unknown[]) => fetchQuery(...a),
-  executeTransaction: vi.fn(),
   getDb: vi.fn(),
   getTriggerSetupError: () => null,
 }));
@@ -22,6 +23,7 @@ import { useAttendanceStore } from "../stores/attendanceStore";
 import { useWorkerStore } from "../stores/workerStore";
 import { usePeriodStore } from "../stores/periodStore";
 import { todayKey } from "../lib/period";
+import { sqlLiteral } from "../lib/sql";
 import type { Worker } from "../types";
 
 const at = (iso: string) => new Date(iso);
@@ -44,6 +46,7 @@ const memoryStorage = () => {
 beforeEach(() => {
   executeQuery.mockReset().mockResolvedValue({ rowsAffected: 1 });
   fetchQuery.mockReset().mockResolvedValue([]);
+  executeTransaction.mockReset().mockResolvedValue(undefined);
   usePeriodStore.setState({ closed: [], earliestDataPeriod: null, isLoading: false });
   useAttendanceStore.setState({ attendances: [], isLoading: false, error: null });
   useWorkerStore.setState({ workers: [], rateHistory: [], isLoading: false, error: null });
@@ -150,9 +153,14 @@ describe("hızlı gün doldurma", () => {
     const result = await markTodayFull();
 
     expect(result).toEqual({ marked: 1, skipped: 1 });
-    const inserts = executeQuery.mock.calls.filter((c) => String(c[0]).startsWith("INSERT"));
-    expect(inserts).toHaveLength(1);
-    expect(inserts[0][1]).toEqual([2, todayKey(), "FULL"]);
+    // Yazma artık TEK transaction içinde, hazırlanmış SQL metni olarak gider.
+    const statements = (executeTransaction.mock.calls[0][0] as string[]) ?? [];
+    expect(executeTransaction).toHaveBeenCalledTimes(1);
+    expect(executeQuery).not.toHaveBeenCalled();
+    expect(statements).toHaveLength(1);
+    expect(statements[0]).toContain(sqlLiteral(2));
+    expect(statements[0]).toContain(sqlLiteral(todayKey()));
+    expect(statements[0]).toContain(sqlLiteral("FULL"));
   });
 
   it("kapalı döneme yazmaz", async () => {

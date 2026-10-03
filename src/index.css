@@ -1,27 +1,9 @@
 @import "tailwindcss";
 
 /*
- * Fontlar yerelden yüklenir. Uzak Google Fonts isteği paketlenmiş uygulamada
- * CSP tarafından engellendiği için sessizce sistem fontuna düşüyordu.
+ * Font yığını tamamen sistem fontlarına dayanır: paketlenmiş uygulamada uzak
+ * font isteği CSP tarafından engelleniyor, paketlenmiş .ttf dosyası da yok.
  */
-@font-face {
-  font-family: "Inter";
-  src: url("/fonts/Inter-Regular.ttf") format("truetype");
-  font-weight: 400 600;
-  font-display: swap;
-}
-@font-face {
-  font-family: "Inter";
-  src: url("/fonts/Inter-Bold.ttf") format("truetype");
-  font-weight: 700;
-  font-display: swap;
-}
-@font-face {
-  font-family: "Inter";
-  src: url("/fonts/Inter-Black.ttf") format("truetype");
-  font-weight: 800 900;
-  font-display: swap;
-}
 
 @plugin "tailwindcss-animate";
 
@@ -29,9 +11,24 @@
 
 @theme {
   --font-sans:
-    "Inter", ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji", "Segoe UI Emoji",
-    "Segoe UI Symbol", "Noto Color Emoji";
-  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+    ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial,
+    sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
+  /*
+   * Generic `monospace` SONRASINA U+20BA (₺) glifi olan aileler ekleniyor.
+   *
+   * Ölçüldü (`scripts/font-lira-probe.mjs` ile, gerçek font dosyaları üzerinde):
+   * Android'in varsayılan monospace'i DroidSansMono ve macOS'un Menlo'su
+   * U+20BA glifini İÇERMEZ — para ekranı boş kutu olarak çiziliyordu.
+   * Roboto (Android) ve SF (Apple) glifi içerir.
+   *
+   * CSS font eşleşmesi karakter başına yürüdüğü için bu, ₺'ı düzeltirken
+   * rakamları monospace'de tutar: ölçümde rakamlar 0 piksel farkla aynı kaldı,
+   * ₺ ise referans fontla aynı sayıda piksele düştü. `font-mono` kullanılan
+   * her yer (para, dosya yolu, hata mesajı) düzelir.
+   */
+  --font-mono:
+    "JetBrains Mono", ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace, Roboto,
+    "Noto Sans", "DejaVu Sans", "Segoe UI Symbol";
 
   --radius-lg: var(--radius);
   --radius-md: calc(var(--radius) - 2px);
@@ -64,12 +61,6 @@
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
-
-  --color-chart-1: var(--chart-1);
-  --color-chart-2: var(--chart-2);
-  --color-chart-3: var(--chart-3);
-  --color-chart-4: var(--chart-4);
-  --color-chart-5: var(--chart-5);
 
   /* Durum renkleri paletten bağımsızdır: anlam sabit kalmalı. */
   --color-ok: var(--ok);
@@ -108,8 +99,6 @@
   --radius-control: 0.75rem;
   --radius-card: 1rem;
   --radius-sheet: 1.5rem;
-
-  --z-toast: 9999;
 }
 
 @layer components {
@@ -198,11 +187,6 @@
     --border: hsl(40 12% 89%);
     --input: hsl(40 12% 89%);
     --ring: hsl(200 65% 38%);
-    --chart-1: hsl(200 65% 45%);
-    --chart-2: hsl(160 45% 42%);
-    --chart-3: hsl(30 70% 50%);
-    --chart-4: hsl(340 55% 55%);
-    --chart-5: hsl(270 45% 55%);
   }
   [data-palette="ocean"].dark {
     --background: hsl(25 10% 11%);
@@ -224,11 +208,6 @@
     --border: hsl(25 8% 18%);
     --input: hsl(25 8% 18%);
     --ring: hsl(200 60% 56%);
-    --chart-1: hsl(200 60% 55%);
-    --chart-2: hsl(160 50% 45%);
-    --chart-3: hsl(30 65% 55%);
-    --chart-4: hsl(280 50% 55%);
-    --chart-5: hsl(340 55% 50%);
   }
 
   /* ===================== Forest ===================== */
@@ -252,11 +231,6 @@
     --border: hsl(120 10% 87%);
     --input: hsl(120 10% 87%);
     --ring: hsl(140 45% 34%);
-    --chart-1: hsl(140 45% 38%);
-    --chart-2: hsl(90 40% 42%);
-    --chart-3: hsl(30 60% 48%);
-    --chart-4: hsl(340 50% 50%);
-    --chart-5: hsl(200 50% 48%);
   }
   [data-palette="forest"].dark {
     --background: hsl(120 5% 11%);
@@ -278,11 +252,6 @@
     --border: hsl(120 5% 18%);
     --input: hsl(120 5% 18%);
     --ring: hsl(140 40% 51%);
-    --chart-1: hsl(140 40% 50%);
-    --chart-2: hsl(90 35% 46%);
-    --chart-3: hsl(30 55% 52%);
-    --chart-4: hsl(340 45% 54%);
-    --chart-5: hsl(200 45% 52%);
   }
 
   /* ===================== Sunset ===================== */
@@ -306,11 +275,6 @@
     --border: hsl(30 15% 87%);
     --input: hsl(30 15% 87%);
     --ring: hsl(25 75% 39%);
-    --chart-1: hsl(25 75% 48%);
-    --chart-2: hsl(160 45% 42%);
-    --chart-3: hsl(340 55% 50%);
-    --chart-4: hsl(280 45% 52%);
-    --chart-5: hsl(45 70% 48%);
   }
   [data-palette="sunset"].dark {
     --background: hsl(20 10% 11%);
@@ -332,11 +296,6 @@
     --border: hsl(20 8% 18%);
     --input: hsl(20 8% 18%);
     --ring: hsl(25 70% 59%);
-    --chart-1: hsl(25 70% 58%);
-    --chart-2: hsl(160 45% 46%);
-    --chart-3: hsl(340 50% 54%);
-    --chart-4: hsl(280 40% 56%);
-    --chart-5: hsl(45 65% 52%);
   }
 
   /* ===================== Mono ===================== */
@@ -360,11 +319,6 @@
     --border: hsl(0 0% 89%);
     --input: hsl(0 0% 89%);
     --ring: hsl(220 5% 42%);
-    --chart-1: hsl(220 5% 42%);
-    --chart-2: hsl(0 0% 55%);
-    --chart-3: hsl(0 0% 45%);
-    --chart-4: hsl(220 5% 60%);
-    --chart-5: hsl(0 0% 38%);
   }
   [data-palette="mono"].dark {
     --background: hsl(0 0% 11%);
@@ -386,11 +340,6 @@
     --border: hsl(0 0% 18%);
     --input: hsl(0 0% 18%);
     --ring: hsl(220 5% 63%);
-    --chart-1: hsl(220 5% 62%);
-    --chart-2: hsl(0 0% 52%);
-    --chart-3: hsl(0 0% 42%);
-    --chart-4: hsl(220 5% 58%);
-    --chart-5: hsl(0 0% 35%);
   }
 
   /* ===================== Midnight ===================== */
@@ -414,11 +363,6 @@
     --border: hsl(220 12% 88%);
     --input: hsl(220 12% 88%);
     --ring: hsl(250 55% 50%);
-    --chart-1: hsl(250 55% 50%);
-    --chart-2: hsl(190 50% 45%);
-    --chart-3: hsl(330 55% 52%);
-    --chart-4: hsl(30 65% 50%);
-    --chart-5: hsl(160 45% 42%);
   }
   [data-palette="midnight"].dark {
     --background: hsl(240 10% 9%);
@@ -440,11 +384,6 @@
     --border: hsl(240 8% 17%);
     --input: hsl(240 8% 17%);
     --ring: hsl(250 50% 64%);
-    --chart-1: hsl(250 50% 62%);
-    --chart-2: hsl(190 45% 50%);
-    --chart-3: hsl(330 50% 56%);
-    --chart-4: hsl(30 60% 54%);
-    --chart-5: hsl(160 40% 46%);
   }
 
   [data-palette="graphite"] {
@@ -467,11 +406,6 @@
     --border: hsl(220 9% 88%);
     --input: hsl(220 9% 88%);
     --ring: hsl(212 78% 38%);
-    --chart-1: hsl(212 78% 38%);
-    --chart-2: hsl(160 45% 42%);
-    --chart-3: hsl(30 70% 50%);
-    --chart-4: hsl(340 55% 55%);
-    --chart-5: hsl(270 45% 55%);
   }
   [data-palette="graphite"].dark {
     --background: hsl(220 6% 11%);
@@ -493,11 +427,6 @@
     --border: hsl(220 6% 19%);
     --input: hsl(220 6% 19%);
     --ring: hsl(212 70% 58%);
-    --chart-1: hsl(212 70% 58%);
-    --chart-2: hsl(160 50% 45%);
-    --chart-3: hsl(30 65% 55%);
-    --chart-4: hsl(340 50% 60%);
-    --chart-5: hsl(270 45% 60%);
   }
   [data-palette="plum"] {
     --background: hsl(300 16% 97%);
@@ -519,11 +448,6 @@
     --border: hsl(300 11% 88%);
     --input: hsl(300 11% 88%);
     --ring: hsl(340 62% 38%);
-    --chart-1: hsl(340 62% 38%);
-    --chart-2: hsl(160 45% 42%);
-    --chart-3: hsl(30 70% 50%);
-    --chart-4: hsl(340 55% 55%);
-    --chart-5: hsl(270 45% 55%);
   }
   [data-palette="plum"].dark {
     --background: hsl(300 8% 11%);
@@ -545,11 +469,6 @@
     --border: hsl(300 8% 19%);
     --input: hsl(300 8% 19%);
     --ring: hsl(340 54% 62%);
-    --chart-1: hsl(340 54% 62%);
-    --chart-2: hsl(160 50% 45%);
-    --chart-3: hsl(30 65% 55%);
-    --chart-4: hsl(340 50% 60%);
-    --chart-5: hsl(270 45% 60%);
   }
   [data-palette="mint"] {
     --background: hsl(195 18% 97%);
@@ -571,11 +490,6 @@
     --border: hsl(195 13% 88%);
     --input: hsl(195 13% 88%);
     --ring: hsl(168 55% 30%);
-    --chart-1: hsl(168 55% 30%);
-    --chart-2: hsl(160 45% 42%);
-    --chart-3: hsl(30 70% 50%);
-    --chart-4: hsl(340 55% 55%);
-    --chart-5: hsl(270 45% 55%);
   }
   [data-palette="mint"].dark {
     --background: hsl(195 10% 11%);
@@ -597,11 +511,87 @@
     --border: hsl(195 10% 19%);
     --input: hsl(195 10% 19%);
     --ring: hsl(168 47% 58%);
-    --chart-1: hsl(168 47% 58%);
-    --chart-2: hsl(160 50% 45%);
-    --chart-3: hsl(30 65% 55%);
-    --chart-4: hsl(340 50% 60%);
-    --chart-5: hsl(270 45% 60%);
+  }
+
+  /*
+   * ===================== Saha (güneş modu) =====================
+   * Şantiye kullanımı: ekran açık havada, eldivenli ve parlak güneşte
+   * okunmuyor. Bu palet bu yüzden renk çeşitliliğini değil kontrastı
+   * hedefler: nötr zemin, neredeyse siyah mürekkep, geri kalan her şey
+   * tek doygun vurgu rengi. Tüm çiftler WCAG AA'yı (4.5:1 metin, 3:1
+   * grafik) geçer — oranlar src/__tests__/paletteContrast.test.ts içinde
+   * ölçülür ve regresyonda düşerse test kızar.
+   */
+  [data-palette="saha"] {
+    --background: hsl(0 0% 100%);
+    --foreground: hsl(0 0% 7%);
+    --card: hsl(0 0% 100%);
+    --card-foreground: hsl(0 0% 7%);
+    --popover: hsl(0 0% 100%);
+    --popover-foreground: hsl(0 0% 7%);
+    --primary: hsl(224 90% 28%);
+    --primary-foreground: hsl(0 0% 100%);
+    --secondary: hsl(0 0% 90%);
+    --secondary-foreground: hsl(0 0% 7%);
+    --muted: hsl(0 0% 90%);
+    --muted-foreground: hsl(0 0% 25%);
+    --accent: hsl(0 0% 90%);
+    --accent-foreground: hsl(0 0% 7%);
+    --destructive: hsl(0 85% 33%);
+    --destructive-foreground: hsl(0 0% 100%);
+    --border: hsl(0 0% 38%);
+    --input: hsl(0 0% 38%);
+    --ring: hsl(224 90% 28%);
+
+    /* Durum renkleri de koyulaştırılır: açık tonda sarı/yeşil güneşte erir. */
+    --ok: hsl(155 90% 16%);
+    --ok-soft: hsl(0 0% 90%);
+    --warn: hsl(28 95% 24%);
+    --warn-soft: hsl(0 0% 90%);
+    --bad: hsl(0 80% 32%);
+    --bad-soft: hsl(0 0% 90%);
+    --info: hsl(210 90% 28%);
+    --info-soft: hsl(0 0% 90%);
+
+    --on-ok: hsl(0 0% 100%);
+    --on-warn: hsl(0 0% 100%);
+    --on-bad: hsl(0 0% 100%);
+    --on-info: hsl(0 0% 100%);
+  }
+  [data-palette="saha"].dark {
+    --background: hsl(0 0% 6%);
+    --foreground: hsl(0 0% 100%);
+    --card: hsl(0 0% 9%);
+    --card-foreground: hsl(0 0% 100%);
+    --popover: hsl(0 0% 9%);
+    --popover-foreground: hsl(0 0% 100%);
+    --primary: hsl(210 100% 72%);
+    --primary-foreground: hsl(0 0% 6%);
+    --secondary: hsl(0 0% 20%);
+    --secondary-foreground: hsl(0 0% 100%);
+    --muted: hsl(0 0% 20%);
+    --muted-foreground: hsl(0 0% 85%);
+    --accent: hsl(0 0% 20%);
+    --accent-foreground: hsl(0 0% 100%);
+    --destructive: hsl(0 95% 75%);
+    --destructive-foreground: hsl(0 0% 6%);
+    --border: hsl(0 0% 45%);
+    --input: hsl(0 0% 45%);
+    --ring: hsl(210 100% 72%);
+
+    --ok: hsl(150 80% 60%);
+    --ok-soft: hsl(0 0% 10%);
+    --warn: hsl(40 100% 62%);
+    --warn-soft: hsl(0 0% 10%);
+    --bad: hsl(0 95% 75%);
+    --bad-soft: hsl(0 0% 10%);
+    --info: hsl(205 100% 72%);
+    --info-soft: hsl(0 0% 10%);
+
+    --on-ok: hsl(0 0% 6%);
+    --on-warn: hsl(0 0% 6%);
+    --on-bad: hsl(0 0% 6%);
+    --on-info: hsl(0 0% 6%);
   }
 }
 
@@ -635,11 +625,70 @@
     transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
   }
 
+  /*
+   * Klavye odağı — görünürlük tabanı. İkon düğmelerinin çoğu tarayıcı
+   * varsayılan halkasına bırakılmıştı; o halka temaya göre sönük kalabiliyor.
+   * `--ring` her palette tanımlı olduğu için tek halka burada çizilir.
+   * Kendi halkasını kuran bileşenler (Button, Input) utilities katmanındaki
+   * `outline-none` ile bu kuralı geçersiz kılar — sıra dışı bir durum değil,
+   * tasarım böyle: onlar ring + offset kullanıyor.
+   */
+  :focus-visible {
+    outline: 2px solid hsl(var(--ring));
+    outline-offset: 2px;
+  }
+
   body {
     @apply bg-background text-foreground antialiased;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     -webkit-tap-highlight-color: transparent;
+  }
+
+  /*
+   * Dokunma hedefi tabanı. Bu sınıfı taşıyan her etkileşimli öğe 44×44px'yi
+   * geçmez.
+   *
+   * GENİŞLİK her cihazda 44px: eski 40px tabanı hem parmakla hem fareyle dar
+   * geliyordu. YÜKSEKLİK ise yalnızca dokunmatik cihazda 44px — fareyle
+   masaüstünde kullanıcı "Sıkışık" satır yoğunluğunu bilinçli seçti; 44px
+   tabanı onun 34px'lik tercihini sessizce iptal ederdi.
+   *
+   * `touch-action: manipulation` dokunma hedefi ile kaydırmayı AYIRIR: çift
+   * dokunuşla yakınlaştırma ihtimali kalkar, hücreye dokunmak gecikmeden
+   * işlem yapar — ama parmakla kaydırma aynen çalışır (manipulation pan'ı
+   * yasaklamaz). `user-select: none` ise Android'de kaydırma sırasında
+   * metin seçimi menüsünün açılmasını engeller.
+   */
+  .tap-target {
+    min-width: 44px;
+    touch-action: manipulation;
+    -webkit-user-select: none;
+    user-select: none;
+  }
+
+  @media (pointer: coarse) {
+    .tap-target {
+      min-height: 44px;
+    }
+  }
+
+  /*
+   * Yatay kaydırmalı tablolar için.
+   *
+   *  - `-webkit-overflow-scrolling: touch`: iOS'ta parmak bırakıldığında
+   *    kaydırma atlayarak değil, yavaşlayarak durur. Bu olmadan başlık
+   *    satırı ile gövde arasındaki senkron her fırlatmada kopuyor.
+   *  - `overscroll-behavior-x: contain`: sağ/sol kenara gelindiğinde tarayıcı
+   *    geri gezinmesini tetiklemez — masaüstünde sürükleme hareketi
+   *    kazayla sayfayı kapatıyordu.
+   *  - `touch-action: pan-x pan-y`: kaydırma bu kapsayıcıda kalır, içindeki
+   *    puantaj hücrelerinin kendi jesti çalınmaz.
+   */
+  .h-scroll-touch {
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior-x: contain;
+    touch-action: pan-x pan-y;
   }
 }
 
@@ -699,17 +748,6 @@
     }
   }
 
-  @keyframes scale-in {
-    0% {
-      opacity: 0;
-      transform: scale(0.92);
-    }
-    100% {
-      opacity: 1;
-      transform: scale(1);
-    }
-  }
-
   @keyframes shake {
     0%,
     100% {
@@ -724,18 +762,6 @@
     60%,
     90% {
       transform: translateX(6px);
-    }
-  }
-
-  @keyframes pulse-glow {
-    0%,
-    100% {
-      transform: scale(1);
-      filter: drop-shadow(0 0 0px rgba(234, 179, 8, 0));
-    }
-    50% {
-      transform: scale(1.05);
-      filter: drop-shadow(0 0 10px rgba(234, 179, 8, 0.6));
     }
   }
 
@@ -783,14 +809,8 @@
   .animate-screen-enter {
     animation: screen-enter 220ms cubic-bezier(0.22, 1, 0.36, 1) both;
   }
-  .animate-scale-in {
-    animation: scale-in 0.3s cubic-bezier(0.16, 1, 0.3, 1) both;
-  }
   .animate-shake {
     animation: shake 0.5s ease-in-out both;
-  }
-  .animate-pulse-glow {
-    animation: pulse-glow 1.2s infinite ease-in-out;
   }
 
   .stagger-children > * {
@@ -839,12 +859,6 @@
     scrollbar-width: thin;
     scrollbar-color: hsl(var(--border)) transparent;
   }
-
-  .glass {
-    background: rgba(255, 255, 255, 0.8);
-    backdrop-filter: blur(16px) saturate(150%);
-    -webkit-backdrop-filter: blur(16px) saturate(150%);
-  }
 }
 
 @layer utilities {
@@ -857,9 +871,6 @@
   }
   .pb-safe-content {
     padding-bottom: calc(7rem + env(safe-area-inset-bottom, 0px));
-  }
-  .pt-safe {
-    padding-top: env(safe-area-inset-top, 0px);
   }
 }
 

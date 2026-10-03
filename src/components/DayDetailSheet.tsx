@@ -19,11 +19,13 @@ import { useMetricsStore } from "../stores/metricsStore";
 import { useToastStore } from "../stores/toastStore";
 import { usePeriodStore } from "../stores/periodStore";
 import { periodOf, formatPeriod } from "../lib/period";
+import { formatMoney } from "../lib/utils";
 
 import { format, parseISO, subDays } from "date-fns";
 import { tr } from "date-fns/locale";
 import type { Worker, Attendance, AttendanceStatus } from "../types";
 import { calculateDailyEarnings, rateResolverFor } from "../utils/earningsCalculator";
+import type { AttendanceUpsertEntry } from "../repositories/attendanceRepository";
 import { DetailSkeleton } from "./ui/skeleton";
 
 interface DayDetailSheetProps {
@@ -33,6 +35,36 @@ interface DayDetailSheetProps {
 }
 
 type EditMap = Record<number, AttendanceStatus | null>;
+
+/** Finansal alanlar — yalnızca bunlar değiştiyse `daily_metrics`'e yazılır. */
+type FinancialField = "production" | "totalEarned" | "extraExpenses" | "isHoliday";
+interface FinancialDraft {
+  production: number;
+  totalEarned: number;
+  extraExpenses: number;
+  isHoliday: boolean;
+}
+
+const EMPTY_FINANCIAL: FinancialDraft = {
+  production: 0,
+  totalEarned: 0,
+  extraExpenses: 0,
+  isHoliday: false,
+};
+
+const toFinancial = (draft: FinancialDraft): FinancialDraft => ({
+  production: Number(draft.production) || 0,
+  totalEarned: Number(draft.totalEarned) || 0,
+  extraExpenses: Number(draft.extraExpenses) || 0,
+  isHoliday: Boolean(draft.isHoliday),
+});
+
+/** İki finansal taslak arasındaki fark; boşsa hiçbir şey yazılmaz. */
+const financialDiff = (before: FinancialDraft, after: FinancialDraft): FinancialField[] => {
+  const left = toFinancial(before);
+  const right = toFinancial(after);
+  return (Object.keys(left) as FinancialField[]).filter((key) => left[key] !== right[key]);
+};
 
 /** Dört durum tek bir segment denetiminde toplanır — dört ayrı çerçeve yerine. */
 const SEGMENTS: {
@@ -47,19 +79,23 @@ const SEGMENTS: {
   { status: "HOLIDAY", label: "İzin", icon: Palmtree, active: "bg-info text-on-info" },
 ];
 
-const money = (n: number) => `₺${Math.round(n).toLocaleString("tr-TR")}`;
-
 export function DayDetailSheet({ isOpen, onClose, dateStr }: DayDetailSheetProps) {
   const allWorkers = useWorkerStore((s) => s.workers);
   const rateHistory = useWorkerStore((s) => s.rateHistory);
   const attendances = useAttendanceStore((s) => s.attendances);
-  const markAttendance = useAttendanceStore((s) => s.markAttendance);
+  const markAttendanceMany = useAttendanceStore((s) => s.markAttendanceMany);
   const attLoading = useAttendanceStore((s) => s.isLoading);
+  const fetchAttendanceByDate = useAttendanceStore((s) => s.fetchAttendanceByDate);
   const metrics = useMetricsStore((s) => s.metrics);
   const updateMetrics = useMetricsStore((s) => s.updateMetrics);
+  const fetchMetricsByDate = useMetricsStore((s) => s.fetchMetricsByDate);
   const metricsLoading = useMetricsStore((s) => s.isLoading);
   const addToast = useToastStore((s) => s.addToast);
   const closedPeriods = usePeriodStore((s) => s.closed);
+
+  // `dateStr` null iken `String(null)` = "null" ile karşılaştırmak, o güne
+  // ait olmayan kayıtları eşleştiriyordu. Tek tipte bir anahtar türetilir.
+  const dayKey = dateStr ? String(dateStr).trim() : "";
 
   const isLoading = attLoading || metricsLoading;
 
@@ -75,39 +111,58 @@ export function DayDetailSheet({ isOpen, onClose, dateStr }: DayDetailSheetProps
 
   /** O gün kaydı olan arşivlenmiş çalışanlar — hesaba girdikleri için gösterilir. */
   const archivedWithData = useMemo(() => {
-    if (!dateStr) return [];
+    if (!dayKey) return [];
     const ids = new Set(
-      attendances
-        .filter((a) => String(a.date).trim() === String(dateStr).trim())
-        .map((a) => Number(a.worker_id)),
+      attendances.filter((a) => String(a.date).trim() === dayKey).map((a) => Number(a.worker_id)),
     );
     return allWorkers.filter((w) => w.is_active === false && ids.has(w.id));
-  }, [allWorkers, attendances, dateStr]);
+  }, [allWorkers, attendances, dayKey]);
 
   const calcWorkers = useMemo(
     () => [...displayWorkers, ...archivedWithData],
     [displayWorkers, archivedWithData],
   );
 
-  const [production, setProduction] = useState(0);
-  const [totalEarned, setTotalEarned] = useState(0);
-  const [extraExpenses, setExtraExpenses] = useState(0);
-  const [isHoliday, setIsHoliday] = useState(false);
+  const [financial, setFinancial] = useState<FinancialDraft>(EMPTY_FINANCIAL);
   const [edits, setEdits] = useState<EditMap>({});
   const [isSaving, setIsSaving] = useState(false);
-  const [isDirty, setIsDirty] = useState(false);
   const [confirmDiscard, setConfirmDiscard] = useState(false);
 
-  const markDirty = useCallback(() => setIsDirty(true), []);
+  /**
+   * Formun açılışta yüklendiği finansal değerler.
+   *
+   * "Kaydet"e hiç dokunmadan basmak, bu tabanla karşılaştırıldığında fark
+   * çıkmaz — dolayısıyla o günün gerçek ciro/gider/üretimi 0'a ezilmez.
+   */
+  const [baseline, setBaseline] = useState<FinancialDraft>(EMPTY_FINANCIAL);
+  /** Kullanıcı bir şeye dokundu mu? Dokunduysa sessiz tazeleme taslağı ezmez. */
+  const touchedRef = useRef(false);
 
+  const updateFinancial = useCallback((key: FinancialField, value: number | boolean) => {
+    touchedRef.current = true;
+    setFinancial((prev) => ({ ...prev, [key]: value }));
+  }, []);
+
+  const markAttendanceEdit = useCallback((workerId: number, status: AttendanceStatus | null) => {
+    touchedRef.current = true;
+    setEdits((prev) => ({ ...prev, [workerId]: status }));
+  }, []);
+
+  // Açılışta ve gün değiştiğinde formu doldur. Sessiz tazeleme: kullanıcı
+  // alana dokunmuşsa (store önbelleği bayattır) taslak korunur.
   useEffect(() => {
-    if (!dateStr) return;
-    const dayMetric = metrics.find((m) => String(m.date).trim() === String(dateStr).trim());
-    setProduction(dayMetric?.production_amount || 0);
-    setTotalEarned(dayMetric?.total_earned || 0);
-    setExtraExpenses(dayMetric?.extra_expenses || 0);
-    setIsHoliday(Boolean(dayMetric?.is_holiday));
-  }, [metrics, dateStr]);
+    if (!dayKey) return;
+    if (touchedRef.current) return;
+    const dayMetric = metrics.find((m) => String(m.date).trim() === dayKey);
+    const next: FinancialDraft = {
+      production: dayMetric?.production_amount || 0,
+      totalEarned: dayMetric?.total_earned || 0,
+      extraExpenses: dayMetric?.extra_expenses || 0,
+      isHoliday: Boolean(dayMetric?.is_holiday),
+    };
+    setFinancial(next);
+    setBaseline(next);
+  }, [metrics, dayKey]);
 
   // Gün değiştiğinde taslak sıfırlanır. Önceki günden otomatik kopyalama
   // BİLEREK yok: sadece bakmak için açılan günde "Kaydet"e basınca dünün
@@ -116,19 +171,36 @@ export function DayDetailSheet({ isOpen, onClose, dateStr }: DayDetailSheetProps
   useEffect(() => {
     if (!dateStr || prevDateRef.current === dateStr) return;
     setEdits({});
-    setIsDirty(false);
     setConfirmDiscard(false);
+    touchedRef.current = false;
     prevDateRef.current = dateStr;
   }, [dateStr]);
+
+  /**
+   * Store önbelleği ayın yüklenmesinden geliyor ve bayat olabilir: sheet
+   * açılışında ve pencere odağa döndüğünde günün güncel verisi tazelenir.
+   */
+  useEffect(() => {
+    if (!isOpen || !dayKey) return;
+    void fetchAttendanceByDate(dayKey, { silent: true });
+    void fetchMetricsByDate(dayKey, { silent: true });
+
+    const onFocus = () => {
+      if (touchedRef.current) return;
+      void fetchAttendanceByDate(dayKey, { silent: true });
+      void fetchMetricsByDate(dayKey, { silent: true });
+    };
+    window.addEventListener("focus", onFocus);
+    return () => window.removeEventListener("focus", onFocus);
+  }, [isOpen, dayKey, fetchAttendanceByDate, fetchMetricsByDate]);
 
   const savedStatusOf = useCallback(
     (workerId: number): AttendanceStatus | null =>
       attendances.find(
         (att: Attendance) =>
-          Number(att.worker_id) === Number(workerId) &&
-          String(att.date).trim() === String(dateStr).trim(),
+          Number(att.worker_id) === Number(workerId) && String(att.date).trim() === dayKey,
       )?.status ?? null,
-    [attendances, dateStr],
+    [attendances, dayKey],
   );
 
   const getWorkerStatus = useCallback(
@@ -137,10 +209,29 @@ export function DayDetailSheet({ isOpen, onClose, dateStr }: DayDetailSheetProps
     [edits, savedStatusOf],
   );
 
-  const hasSavedAttendance = useMemo(
-    () => displayWorkers.some((w) => savedStatusOf(w.id) !== null),
-    [displayWorkers, savedStatusOf],
+  /** Yalnız bu güne ait kayıt sayısı — `dayKey` boşken yanlış eşleşme olmaz. */
+  const savedAttendanceCount = useMemo(
+    () => (dayKey ? attendances.filter((a) => String(a.date).trim() === dayKey).length : 0),
+    [attendances, dayKey],
   );
+
+  const hasSavedAttendance = savedAttendanceCount > 0;
+
+  /** Bu kayıttan önce veritabanında duran finansal değerlerle farkı. */
+  const changedFinancialFields = useMemo(
+    () => financialDiff(baseline, financial),
+    [baseline, financial],
+  );
+
+  /** Kaydedilmesi gereken puantaj farkları — değişiklik yoksa boş. */
+  const pendingAttendance = useMemo<AttendanceUpsertEntry[]>(() => {
+    if (!dayKey) return [];
+    return displayWorkers
+      .map((w) => ({ workerId: w.id, date: dayKey, status: getWorkerStatus(w.id) }))
+      .filter((entry) => entry.status !== savedStatusOf(entry.workerId));
+  }, [displayWorkers, dayKey, getWorkerStatus, savedStatusOf]);
+
+  const hasUnsavedChanges = changedFinancialFields.length > 0 || pendingAttendance.length > 0;
 
   /** Bir önceki günün puantajını taslağa kopyalar (kaydedilene kadar uygulanmaz). */
   const copyPreviousDay = () => {
@@ -162,7 +253,7 @@ export function DayDetailSheet({ isOpen, onClose, dateStr }: DayDetailSheetProps
     }
 
     setEdits(copied);
-    markDirty();
+    touchedRef.current = true;
     addToast("Dünkü puantaj forma dolduruldu — kaydetmeyi unutmayın", "info");
   };
 
@@ -172,12 +263,18 @@ export function DayDetailSheet({ isOpen, onClose, dateStr }: DayDetailSheetProps
       next[w.id] = status;
     });
     setEdits(next);
-    markDirty();
+    touchedRef.current = true;
   };
 
   const calculations = useMemo(() => {
     if (!dateStr) {
-      return { totalWorkerCosts: 0, netProfit: 0, partnerShare: 0, individualEarnings: {} };
+      return {
+        totalWorkerCosts: 0,
+        netProfit: 0,
+        undistributed: 0,
+        partnerShare: 0,
+        individualEarnings: {},
+      };
     }
     const attMap: Record<number, AttendanceStatus | null> = {};
     calcWorkers.forEach((w) => {
@@ -186,47 +283,85 @@ export function DayDetailSheet({ isOpen, onClose, dateStr }: DayDetailSheetProps
     return calculateDailyEarnings(
       calcWorkers,
       attMap,
-      totalEarned,
-      extraExpenses,
+      Number(financial.totalEarned) || 0,
+      Number(financial.extraExpenses) || 0,
       rateResolverFor(dateStr, rateHistory),
     );
-  }, [calcWorkers, getWorkerStatus, dateStr, totalEarned, extraExpenses, rateHistory]);
+  }, [calcWorkers, getWorkerStatus, dateStr, financial, rateHistory]);
 
+  /**
+   * Gün kaydı.
+   *
+   * Finansal alanlara yalnızca GERÇEKTEN değiştikleri yazılır; hiçbir şeye
+   * dokunulmadan basılan «Kaydet» günün ciro/gider/üretimini 0'a ezmez.
+   *
+   * Puantajların tamamı TEK transaction'da yazılır (`markAttendanceMany`):
+   * sıralı tekil yazmalarda hata ortasında oluştuğunda gün yarım kayıtlı
+   * kalıyor, o günün hakedişi eksik hesaplanıyordu.
+   */
   const handleSave = async () => {
     if (!dateStr || isSaving) return;
     setIsSaving(true);
+    // Finansal veri ve puantaj iki AYRI transaction'da yazılır
+    // (`updateMetrics` autocommit UPSERT, `markAttendanceMany` kendi
+    // transaction'ı). İkincisi patlarsa gün YARI kayıtlı kalır: ciro kayıtlı,
+    // puantaj yazılmamış. Bu iki kaydı tek transaction'da birleştirmek iki
+    // store'un ve repository'nin değişmesini gerektirir (parametreli UPSERT,
+    // iyimser UI geri alma, dönem kilidi kontrolü) — bu dosyanın işi değil.
+    // O yüzden yarı kayıt olursa kullanıcıya AÇIKÇA söyleniyor; hata mesajı
+    // "kaydedilemedi" deyip ciroyun kaydolduğunu saklamak daha kötüdür.
+    let financialSaved = false;
     try {
-      // Önce günün finansal verisi, sonra puantaj. Herhangi biri patlarsa hata
-      // yukarı çıkar, sayfa KAPANMAZ ve kullanıcı durumu görür.
-      await updateMetrics(
-        dateStr,
-        Number(production),
-        Number(totalEarned),
-        Number(extraExpenses),
-        isHoliday,
-      );
-
-      for (const w of displayWorkers) {
-        const newStatus = getWorkerStatus(w.id);
-        if (newStatus !== savedStatusOf(w.id)) {
-          await markAttendance(w.id, dateStr, newStatus);
-        }
+      if (changedFinancialFields.length > 0) {
+        await updateMetrics(
+          dateStr,
+          Number(financial.production) || 0,
+          Number(financial.totalEarned) || 0,
+          Number(financial.extraExpenses) || 0,
+          Boolean(financial.isHoliday),
+        );
+        financialSaved = true;
       }
 
-      setIsDirty(false);
-      addToast("Gün kaydedildi", "success");
+      if (pendingAttendance.length > 0) {
+        await markAttendanceMany(pendingAttendance);
+      }
+
+      if (changedFinancialFields.length === 0 && pendingAttendance.length === 0) {
+        addToast("Değişiklik yok", "info");
+      } else {
+        addToast("Gün kaydedildi", "success");
+      }
+      setBaseline(financial);
+      setEdits({});
+      touchedRef.current = false;
       onClose();
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       console.error("[DayDetailSheet] Save error:", err);
-      addToast(`Kaydedilemedi: ${msg}`, "error");
+      if (financialSaved) {
+        // Ciro kaydedildi, puantaj kaydedilemedi. Sessizce yutmak, günün
+        // hakedişinin puantajsız hesaplanmasına yol açar.
+        addToast(
+          `Ciro kaydedildi ama puantaj kaydedilemedi: ${msg}. ` +
+            "Günü yeniden açıp puantajı tekrar girin.",
+          "error",
+        );
+        // Ciro artık kalıcı; formu "kaydedilmemiş" gibi bırakmamak için
+        // tabanı günceller ki kullanıcı yalnız puantajı yeniden göndersin.
+        setBaseline(financial);
+        setEdits({});
+        touchedRef.current = false;
+      } else {
+        addToast(`Kaydedilemedi: ${msg}`, "error");
+      }
     } finally {
       setIsSaving(false);
     }
   };
 
   const requestClose = () => {
-    if (isDirty && !isSaving) {
+    if (hasUnsavedChanges && !isSaving) {
       setConfirmDiscard(true);
       return;
     }
@@ -247,9 +382,9 @@ export function DayDetailSheet({ isOpen, onClose, dateStr }: DayDetailSheetProps
           side="bottom"
           showCloseButton={false}
           onInteractOutside={(e) => {
-            if (isDirty) e.preventDefault();
+            if (hasUnsavedChanges) e.preventDefault();
           }}
-          className="mx-auto w-full max-w-md h-[92vh] rounded-t-sheet border-t-0 p-0 gap-0 bg-background"
+          className="mx-auto w-full max-w-md h-[92vh] h-[92dvh] rounded-t-sheet border-t-0 p-0 gap-0 bg-background"
         >
           {/* Tutamak + başlık */}
           <SheetHeader className="p-0 gap-0 shrink-0">
@@ -261,13 +396,13 @@ export function DayDetailSheet({ isOpen, onClose, dateStr }: DayDetailSheetProps
                 <SheetTitle className="text-[17px] font-semibold tracking-tight truncate text-left">
                   {format(parseISO(dateStr), "d MMMM yyyy", { locale: tr })}
                 </SheetTitle>
-                {isClosed ? (
+                {hasUnsavedChanges ? (
+                  <p className="text-[11px] text-warn mt-0.5">Kaydedilmemiş değişiklik var</p>
+                ) : isClosed ? (
                   <p className="text-[11px] text-info flex items-center gap-1 mt-0.5">
                     <Lock className="w-3 h-3" />
                     {formatPeriod(periodOf(dateStr))} kapalı — salt okunur
                   </p>
-                ) : isDirty ? (
-                  <p className="text-[11px] text-warn mt-0.5">Kaydedilmemiş değişiklik var</p>
                 ) : (
                   <p className="text-[11px] text-muted-foreground mt-0.5 capitalize">
                     {format(parseISO(dateStr), "EEEE", { locale: tr })}
@@ -277,14 +412,11 @@ export function DayDetailSheet({ isOpen, onClose, dateStr }: DayDetailSheetProps
 
               <button
                 type="button"
-                onClick={() => {
-                  setIsHoliday((v) => !v);
-                  markDirty();
-                }}
-                aria-pressed={isHoliday}
+                onClick={() => updateFinancial("isHoliday", !financial.isHoliday)}
+                aria-pressed={financial.isHoliday}
                 disabled={isClosed}
-                className={`shrink-0 h-9 px-3 rounded-control text-[12px] font-medium flex items-center gap-1.5 transition-all active:scale-95 disabled:opacity-50 ${
-                  isHoliday
+                className={`tap-target shrink-0 px-3 rounded-control text-[12px] font-medium flex items-center gap-1.5 transition-all active:scale-95 disabled:opacity-50 ${
+                  financial.isHoliday
                     ? "bg-info text-on-info"
                     : "bg-muted/60 text-muted-foreground hover:text-foreground"
                 }`}
@@ -294,6 +426,21 @@ export function DayDetailSheet({ isOpen, onClose, dateStr }: DayDetailSheetProps
               </button>
             </div>
           </SheetHeader>
+
+          {/* Kilitli dönemde ön-uyarı: düğmeler yalnız soluklaşıyordu, nedenini
+              kullanıcı ancak «Kaydet»e basınca öğreniyordu. */}
+          {isClosed && (
+            <div
+              role="status"
+              className="mx-5 mb-3 shrink-0 flex items-start gap-2 p-2.5 rounded-control bg-warn-soft border border-amber-200 dark:border-amber-500/20"
+            >
+              <Lock className="w-3.5 h-3.5 text-warn shrink-0 mt-0.5" />
+              <p className="text-[11px] font-medium text-warn leading-relaxed">
+                {formatPeriod(periodOf(dateStr))} dönemi kapatılmış. Bu gün salt okunur — değişiklik
+                yapmak için Ayarlar → Dönem Kilidi&apos;den bu dönemi yeniden açın.
+              </p>
+            </div>
+          )}
 
           {isLoading ? (
             <DetailSkeleton />
@@ -310,16 +457,14 @@ export function DayDetailSheet({ isOpen, onClose, dateStr }: DayDetailSheetProps
                     inputMode="decimal"
                     min={0}
                     disabled={isClosed}
-                    value={production || ""}
-                    onChange={(e) => {
-                      setProduction(Math.max(parseFloat(e.target.value) || 0, 0));
-                      markDirty();
-                    }}
+                    value={Number(financial.production) || ""}
+                    onChange={(e) =>
+                      updateFinancial("production", Math.max(parseFloat(e.target.value) || 0, 0))
+                    }
                     className={fieldClass}
                     placeholder="0"
                   />
                 </label>
-
                 <label className="block">
                   <span className="text-[12px] text-muted-foreground mb-1.5 block">Ciro ₺</span>
                   <input
@@ -327,11 +472,10 @@ export function DayDetailSheet({ isOpen, onClose, dateStr }: DayDetailSheetProps
                     inputMode="decimal"
                     min={0}
                     disabled={isClosed}
-                    value={totalEarned || ""}
-                    onChange={(e) => {
-                      setTotalEarned(Math.max(parseFloat(e.target.value) || 0, 0));
-                      markDirty();
-                    }}
+                    value={Number(financial.totalEarned) || ""}
+                    onChange={(e) =>
+                      updateFinancial("totalEarned", Math.max(parseFloat(e.target.value) || 0, 0))
+                    }
                     className={fieldClass}
                     placeholder="0"
                   />
@@ -344,11 +488,10 @@ export function DayDetailSheet({ isOpen, onClose, dateStr }: DayDetailSheetProps
                     inputMode="decimal"
                     min={0}
                     disabled={isClosed}
-                    value={extraExpenses || ""}
-                    onChange={(e) => {
-                      setExtraExpenses(Math.max(parseFloat(e.target.value) || 0, 0));
-                      markDirty();
-                    }}
+                    value={Number(financial.extraExpenses) || ""}
+                    onChange={(e) =>
+                      updateFinancial("extraExpenses", Math.max(parseFloat(e.target.value) || 0, 0))
+                    }
                     className={fieldClass}
                     placeholder="0"
                   />
@@ -359,7 +502,7 @@ export function DayDetailSheet({ isOpen, onClose, dateStr }: DayDetailSheetProps
               <div className="mt-4 py-3 border-y border-border/60 flex items-center justify-between text-[13px]">
                 <span className="text-muted-foreground">Yevmiye gideri</span>
                 <span className="font-semibold tabular-nums">
-                  {money(calculations.totalWorkerCosts)}
+                  {formatMoney(calculations.totalWorkerCosts)}
                 </span>
                 <span className="w-px h-4 bg-border" />
                 <span className="text-muted-foreground">Net kâr</span>
@@ -368,9 +511,30 @@ export function DayDetailSheet({ isOpen, onClose, dateStr }: DayDetailSheetProps
                     calculations.netProfit < 0 ? "text-bad" : "text-ok"
                   }`}
                 >
-                  {money(calculations.netProfit)}
+                  {formatMoney(calculations.netProfit)}
                 </span>
               </div>
+
+              {/* Dağıtılmayan tutar (ADR-0009): zararlı gün ortak payı
+                  dağıtılmaz; kârlı gün aktif ortak yoksa kâr da dağıtılmaz.
+                  Bu satır olmadan ortaklar neden 0 aldığını anlamıyor ve para
+                  ekranda kaybolmuş görünüyor. */}
+              {calculations.undistributed !== 0 && (
+                <div
+                  className={`mt-2 flex items-center justify-between gap-2 text-[12px] ${
+                    calculations.undistributed < 0 ? "text-bad" : "text-muted-foreground"
+                  }`}
+                >
+                  <span>
+                    {calculations.undistributed < 0
+                      ? "Bu gün zarar edildi — ortak payı dağıtılmadı"
+                      : "Bu gün kâr gerçekleşti — dağıtılacak aktif ortak yoktu"}
+                  </span>
+                  <span className="font-semibold tabular-nums">
+                    {formatMoney(calculations.undistributed)}
+                  </span>
+                </div>
+              )}
 
               {/* Puantaj */}
               <div className="mt-5 flex items-center justify-between gap-2">
@@ -384,7 +548,7 @@ export function DayDetailSheet({ isOpen, onClose, dateStr }: DayDetailSheetProps
                         ? "Bu güne ait kayıt zaten var"
                         : "Bir önceki günün puantajını kopyala"
                     }
-                    className="h-8 px-2.5 rounded-lg bg-muted/60 text-[12px] text-muted-foreground hover:text-foreground flex items-center gap-1.5 active:scale-95 transition-all disabled:opacity-40"
+                    className="tap-target px-2.5 rounded-lg bg-muted/60 text-[12px] text-muted-foreground hover:text-foreground flex items-center gap-1.5 active:scale-95 transition-all disabled:opacity-40"
                   >
                     <CopyPlus className="w-3.5 h-3.5" /> Dünü kopyala
                   </button>
@@ -393,7 +557,7 @@ export function DayDetailSheet({ isOpen, onClose, dateStr }: DayDetailSheetProps
                     disabled={isClosed}
                     title="Tümünü tam gün yap"
                     aria-label="Tümünü tam gün yap"
-                    className="h-8 w-8 rounded-lg bg-muted/60 text-muted-foreground hover:text-ok flex items-center justify-center active:scale-95 transition-all disabled:opacity-40"
+                    className="tap-target rounded-lg bg-muted/60 text-muted-foreground hover:text-ok flex items-center justify-center active:scale-95 transition-all disabled:opacity-40"
                   >
                     <CheckCheck className="w-4 h-4" />
                   </button>
@@ -402,7 +566,7 @@ export function DayDetailSheet({ isOpen, onClose, dateStr }: DayDetailSheetProps
                     disabled={isClosed}
                     title="Seçimleri temizle"
                     aria-label="Tüm seçimleri temizle"
-                    className="h-8 w-8 rounded-lg bg-muted/60 text-muted-foreground hover:text-foreground flex items-center justify-center active:scale-95 transition-all disabled:opacity-40"
+                    className="tap-target rounded-lg bg-muted/60 text-muted-foreground hover:text-foreground flex items-center justify-center active:scale-95 transition-all disabled:opacity-40"
                   >
                     <Eraser className="w-4 h-4" />
                   </button>
@@ -443,7 +607,7 @@ export function DayDetailSheet({ isOpen, onClose, dateStr }: DayDetailSheetProps
                               earnings < 0 ? "text-bad" : ""
                             }`}
                           >
-                            {money(earnings)}
+                            {formatMoney(earnings)}
                           </p>
                         </div>
                       </div>
@@ -464,11 +628,8 @@ export function DayDetailSheet({ isOpen, onClose, dateStr }: DayDetailSheetProps
                                 aria-pressed={on}
                                 disabled={isClosed}
                                 aria-label={`${worker.name}: ${label}`}
-                                onClick={() => {
-                                  setEdits((prev) => ({ ...prev, [worker.id]: on ? null : s }));
-                                  markDirty();
-                                }}
-                                className={`flex-1 h-10 rounded-[0.6rem] flex items-center justify-center gap-1 text-[12px] font-medium transition-all active:scale-95 disabled:opacity-50 ${
+                                onClick={() => markAttendanceEdit(worker.id, on ? null : s)}
+                                className={`tap-target flex-1 rounded-[0.6rem] flex items-center justify-center gap-1 text-[12px] font-medium transition-all active:scale-95 disabled:opacity-50 ${
                                   on
                                     ? `${active} shadow-sm`
                                     : "text-foreground/65 hover:text-foreground hover:bg-background/60"
@@ -529,8 +690,8 @@ export function DayDetailSheet({ isOpen, onClose, dateStr }: DayDetailSheetProps
               className="flex-1 h-11 rounded-control bg-bad text-on-bad text-[13px] font-medium"
               onClick={() => {
                 setConfirmDiscard(false);
-                setIsDirty(false);
                 setEdits({});
+                touchedRef.current = false;
                 onClose();
               }}
             >

@@ -16,13 +16,12 @@ import { tr } from "date-fns/locale";
 import { useWorkerStore } from "../stores/workerStore";
 import { usePeriodStore } from "../stores/periodStore";
 import { useToastStore } from "../stores/toastStore";
-import { attendanceRepository } from "../repositories/attendanceRepository";
-import { metricsRepository } from "../repositories/metricsRepository";
-import { paymentRepository } from "../repositories/paymentRepository";
-import { calculateWorkerStats } from "../utils/calculations";
-import { calculateDailyEarnings, rateResolverFor } from "../utils/earningsCalculator";
+import { useDomainMonthData } from "../hooks/useDomainMonthData";
 import { periodOfDate, formatPeriod } from "../lib/period";
-import type { Attendance, DailyMetric, Payment, Worker, AttendanceStatus } from "../types";
+import { calculateDailyEarnings, rateResolverFor, roundMoney } from "../utils/earningsCalculator";
+import { buildWorkerStats, canSelectNextMonth } from "../lib/periodStats";
+import { formatMoney } from "../lib/utils";
+import type { Attendance, AttendanceStatus, Worker } from "../types";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "./ui/dialog";
 import { WorkerAvatar } from "./ui/worker-avatar";
 import { workerInitials } from "../utils/initials";
@@ -31,21 +30,30 @@ interface MonthSummaryScreenProps {
   onWorkerClick: (worker: Worker) => void;
 }
 
-const money = (n: number) => `₺${Math.round(n).toLocaleString("tr-TR")}`;
+/**
+ * Ekipte bu ay verisi olan herkes — arşivlenmişler dahil.
+ *
+ * Hook'un `selectPool` geri çağrısı olarak da kullanılır: hakedişin
+ * hesaplandığı havuz ile ekranda listelenen kişi listesi aynı olmalı, yoksa
+ * toplamlar ekrandaki satırlarla uyuşmaz. Modül seviyesinde tanımlı ki
+ * kimliği her render'da değişmez — hook içindeki `useMemo` bu yüzden bozulmaz.
+ */
+const selectRelevant = (
+  workers: readonly Worker[],
+  attendance: readonly Attendance[],
+): Worker[] => {
+  const monthIds = new Set(attendance.map((a) => Number(a.worker_id)));
+  return workers.filter((w) => w.is_active !== false || monthIds.has(w.id));
+};
 
 export function MonthSummaryScreen({ onWorkerClick }: MonthSummaryScreenProps) {
-  const workers = useWorkerStore((s) => s.workers);
-  const rateHistory = useWorkerStore((s) => s.rateHistory);
   const closed = usePeriodStore((s) => s.closed);
+  const workers = useWorkerStore((s) => s.workers);
   const closePeriod = usePeriodStore((s) => s.closePeriod);
   const reopenPeriod = usePeriodStore((s) => s.reopenPeriod);
   const addToast = useToastStore((s) => s.addToast);
 
   const [currentMonth, setCurrentMonth] = useState(new Date());
-  const [attendance, setAttendance] = useState<Attendance[]>([]);
-  const [metrics, setMetrics] = useState<DailyMetric[]>([]);
-  const [payments, setPayments] = useState<Payment[]>([]);
-  const [loading, setLoading] = useState(true);
   const [confirmLock, setConfirmLock] = useState(false);
   const [busy, setBusy] = useState(false);
 
@@ -53,59 +61,65 @@ export function MonthSummaryScreen({ onWorkerClick }: MonthSummaryScreenProps) {
   const isClosed = closed.some((c) => c.period === period);
   const monthLabel = format(currentMonth, "MMMM yyyy", { locale: tr });
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    try {
-      const [a, m, p] = await Promise.all([
-        attendanceRepository.findAll(),
-        metricsRepository.findAll(),
-        paymentRepository.findAll(),
-      ]);
-      setAttendance(a);
-      setMetrics(m);
-      setPayments(p);
-    } catch (err: unknown) {
-      addToast(`Veriler yüklenemedi: ${err instanceof Error ? err.message : String(err)}`, "error");
-    } finally {
-      setLoading(false);
-    }
-  }, [addToast]);
+  /**
+   * Hook havuzu kendi `workers` listesiyle birleştirir; `selectPool` yalnız
+   * attendance alır, bu yüzden `workers` burada kapatılır.
+   */
+  const selectPoolOf = useCallback(
+    (att: readonly Attendance[]) => selectRelevant(workers, att),
+    [workers],
+  );
 
+  /**
+   * Veri ortak hook'tan gelir (K8): ekran hiçbir repository'ye dokunmaz.
+   * `withPayments` açık çünkü "tüm dönemler dahil" bakiye tüm ödemeleri
+   * gerektirir; puantaj ise yalnız ekrandaki ayın aralığıyla okunur.
+   */
+  const {
+    rateHistory,
+    attendance,
+    metrics,
+    payments,
+    periodIndex,
+    periodEarnings,
+    allTimeEarned,
+    isLoading: loading,
+    error: dataError,
+  } = useDomainMonthData({
+    month: currentMonth,
+    withPayments: true,
+    selectPool: selectPoolOf,
+  });
+
+  /** Hook'un okuma hatası ekrana toast olarak düşer; hook kendi hatasını yutar. */
   useEffect(() => {
-    load();
-  }, [load]);
+    if (dataError) addToast(dataError, "error");
+  }, [dataError, addToast]);
 
   /** Ekipte bu ay verisi olan herkes — arşivlenmişler dahil. */
-  const relevantWorkers = useMemo(() => {
-    const monthIds = new Set(
-      attendance.filter((a) => String(a.date).startsWith(period)).map((a) => Number(a.worker_id)),
-    );
-    return workers.filter((w) => w.is_active !== false || monthIds.has(w.id));
-  }, [workers, attendance, period]);
+  const relevantWorkers = useMemo(() => selectRelevant(workers, attendance), [attendance, workers]);
 
-  /** İşletme tarafı: üretim, ciro, gider, yevmiye ve net kâr. */
+  /**
+   * İşletme tarafı: üretim, ciro, gider, yevmiye, net kâr ve **dağıtılmayan**
+   * tutar. Sonuncusu olmadan ortaklara dağıtılmayan kâr/zarar ekranda hiç
+   * görünmez — para kaybolmuş gibi durur (ADR-0009).
+   */
   const business = useMemo(() => {
-    const monthMetrics = metrics.filter((m) => String(m.date).startsWith(period));
-    const byDate = new Map<string, Attendance[]>();
-    for (const a of attendance) {
-      const key = String(a.date).trim();
-      const bucket = byDate.get(key);
-      if (bucket) bucket.push(a);
-      else byDate.set(key, [a]);
-    }
+    const byDate = periodIndex.attendanceByDate;
 
     let production = 0;
     let revenue = 0;
     let expenses = 0;
     let wageCost = 0;
     let netProfit = 0;
+    let undistributed = 0;
 
-    for (const m of monthMetrics) {
-      const dateStr = String(m.date).trim();
+    for (const m of metrics) {
       production += m.production_amount || 0;
       revenue += m.total_earned || 0;
       expenses += m.extra_expenses || 0;
 
+      const dateStr = String(m.date).trim();
       const statusMap: Record<number, AttendanceStatus | null> = {};
       for (const a of byDate.get(dateStr) ?? []) statusMap[Number(a.worker_id)] = a.status;
 
@@ -118,6 +132,7 @@ export function MonthSummaryScreen({ onWorkerClick }: MonthSummaryScreenProps) {
       );
       wageCost += day.totalWorkerCosts;
       netProfit += day.netProfit;
+      undistributed += day.undistributed;
     }
 
     const workedDays = eachDayOfInterval({
@@ -125,28 +140,33 @@ export function MonthSummaryScreen({ onWorkerClick }: MonthSummaryScreenProps) {
       end: endOfMonth(currentMonth),
     }).filter((d) => (byDate.get(format(d, "yyyy-MM-dd")) ?? []).length > 0).length;
 
-    return { production, revenue, expenses, wageCost, netProfit, workedDays };
-  }, [metrics, attendance, period, relevantWorkers, rateHistory, currentMonth]);
+    return {
+      production,
+      revenue,
+      expenses,
+      wageCost: roundMoney(wageCost),
+      netProfit: roundMoney(netProfit),
+      undistributed: roundMoney(undistributed),
+      workedDays,
+    };
+  }, [metrics, periodIndex, relevantWorkers, rateHistory, currentMonth]);
 
-  /** Kişi bazlı hakediş / ödeme / bakiye. */
   const rows = useMemo(
     () =>
       relevantWorkers
         .map((worker) => ({
           worker,
-          stats: calculateWorkerStats(
+          stats: buildWorkerStats(
             worker,
-            currentMonth,
-            metrics,
-            attendance,
-            relevantWorkers,
+            period,
+            periodEarnings,
+            allTimeEarned.get(worker.id) ?? 0,
             payments,
-            rateHistory,
           ),
         }))
         .filter((r) => r.stats.totalEarnedInMonth !== 0 || r.stats.paidInMonth !== 0)
         .sort((a, b) => b.stats.periodBalance - a.stats.periodBalance),
-    [relevantWorkers, currentMonth, metrics, attendance, payments, rateHistory],
+    [relevantWorkers, period, periodEarnings, allTimeEarned, payments],
   );
 
   const initials = useMemo(() => workerInitials(relevantWorkers), [relevantWorkers]);
@@ -200,7 +220,7 @@ export function MonthSummaryScreen({ onWorkerClick }: MonthSummaryScreenProps) {
           <button
             onClick={() => setCurrentMonth((p) => new Date(p.getFullYear(), p.getMonth() - 1, 1))}
             aria-label="Önceki ay"
-            className="w-10 h-9 rounded-lg flex items-center justify-center active:scale-90 transition-all hover:bg-background"
+            className="tap-target rounded-lg flex items-center justify-center active:scale-90 transition-all hover:bg-background"
           >
             <ChevronLeft className="w-4 h-4" />
           </button>
@@ -215,7 +235,8 @@ export function MonthSummaryScreen({ onWorkerClick }: MonthSummaryScreenProps) {
           <button
             onClick={() => setCurrentMonth((p) => new Date(p.getFullYear(), p.getMonth() + 1, 1))}
             aria-label="Sonraki ay"
-            className="w-10 h-9 rounded-lg flex items-center justify-center active:scale-90 transition-all hover:bg-background"
+            disabled={!canSelectNextMonth(currentMonth)}
+            className="tap-target rounded-lg flex items-center justify-center active:scale-90 transition-all hover:bg-background disabled:opacity-30 disabled:pointer-events-none"
           >
             <ChevronRight className="w-4 h-4" />
           </button>
@@ -233,29 +254,43 @@ export function MonthSummaryScreen({ onWorkerClick }: MonthSummaryScreenProps) {
             <div className="rounded-card border-2 border-primary/20 surface-raised p-4">
               <div className="text-[11px] font-medium text-primary/70">Bu ay ödenecek kalan</div>
               <div className="text-3xl font-semibold font-mono tracking-tight text-primary mt-1">
-                {money(totals.due)}
+                {formatMoney(totals.due)}
               </div>
               <div className="text-[11px] font-bold text-muted-foreground mt-1.5">
-                {money(totals.earned)} hakediş − {money(totals.paid)} ödendi
+                {formatMoney(totals.earned)} hakediş − {formatMoney(totals.paid)} ödendi
               </div>
-              {totals.debt !== totals.due && (
-                <div className="text-[11px] font-bold text-muted-foreground mt-0.5">
-                  Tüm dönemler dahil kalan borç:{" "}
-                  <span className="font-mono text-foreground">{money(totals.debt)}</span>
-                </div>
-              )}
+              {/*
+                Borç satırı ASLA gizlenmez: `due !== debt` guard'ı, önceki
+                dönemlerden kalan bir borç tam olarak bu ayki rakama eşit
+                olduğunda satırı yok ediyordu — yani borç varken ekranda
+                borç görünmüyordu.
+              */}
+              <div className="text-[11px] font-bold text-muted-foreground mt-0.5">
+                {totals.debt >= 0
+                  ? "Tüm dönemler dahil kalan borç"
+                  : "Tüm dönemler dahil fazla ödeme"}
+                :{" "}
+                <span className={`font-mono ${totals.debt >= 0 ? "text-foreground" : "text-bad"}`}>
+                  {formatMoney(Math.abs(totals.debt))}
+                </span>
+              </div>
             </div>
 
             {/* İşletme özeti */}
             <div className="grid grid-cols-2 gap-2">
               {[
                 { icon: Layers, label: "Üretim", value: `${business.production}`, cls: "" },
-                { icon: TrendingUp, label: "Ciro", value: money(business.revenue), cls: "" },
-                { icon: Wallet, label: "Yevmiye gideri", value: money(business.wageCost), cls: "" },
+                { icon: TrendingUp, label: "Ciro", value: formatMoney(business.revenue), cls: "" },
+                {
+                  icon: Wallet,
+                  label: "Yevmiye gideri",
+                  value: formatMoney(business.wageCost),
+                  cls: "",
+                },
                 {
                   icon: Scale,
                   label: "Net kâr",
-                  value: money(business.netProfit),
+                  value: formatMoney(business.netProfit),
                   cls: business.netProfit < 0 ? "text-bad" : "text-ok",
                 },
               ].map(({ icon: Icon, label, value, cls }) => (
@@ -271,9 +306,34 @@ export function MonthSummaryScreen({ onWorkerClick }: MonthSummaryScreenProps) {
               ))}
             </div>
 
+            {/* Ortaklara dağıtılmayan tutar (ADR-0009). Zararlı gün ortak payı
+                dağıtılmaz; kârlı gün aktif ortak yoksa kâr da dağıtılmaz.
+                Bu satır olmadan dönem düzeyinde ortada kalan para hiç
+                görünmezdi. Aynı satır işletme özetiyle de tutarlılık denetimi
+                yapar: yevmiye + net kâr − dağıtılmayan = kişi hakedişleri. */}
+            {business.undistributed !== 0 && (
+              <div className="rounded-control border bg-card px-3 py-2 flex items-center justify-between gap-2">
+                <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                  <Scale className="w-3.5 h-3.5" />
+                  <span>
+                    {business.undistributed < 0
+                      ? "İşletme zararı — ortak payı dağıtılmadı"
+                      : "Dağıtılmayan kâr — o günlerde aktif ortak yoktu"}
+                  </span>
+                </div>
+                <span
+                  className={`text-sm font-semibold font-mono tabular-nums ${
+                    business.undistributed < 0 ? "text-bad" : "text-foreground"
+                  }`}
+                >
+                  {formatMoney(business.undistributed)}
+                </span>
+              </div>
+            )}
+
             <p className="text-[11px] text-muted-foreground font-medium px-1">
               Bu ay {business.workedDays} gün kayıt girilmiş. Gider toplamı{" "}
-              {money(business.expenses)}.
+              {formatMoney(business.expenses)}.
             </p>
 
             {/* Kişi bazlı döküm */}
@@ -294,7 +354,7 @@ export function MonthSummaryScreen({ onWorkerClick }: MonthSummaryScreenProps) {
                     <button
                       key={worker.id}
                       onClick={() => onWorkerClick(worker)}
-                      className="w-full flex items-center justify-between px-3.5 py-3 gap-3 text-left hover:bg-muted/40 active:bg-muted/60 transition-colors"
+                      className="tap-target w-full flex items-center justify-between px-3.5 py-3 gap-3 text-left hover:bg-muted/40 active:bg-muted/60 transition-colors"
                     >
                       <div className="flex items-center gap-2.5 min-w-0">
                         <WorkerAvatar worker={worker} label={initials.get(worker.id)} />
@@ -303,8 +363,8 @@ export function MonthSummaryScreen({ onWorkerClick }: MonthSummaryScreenProps) {
                             {worker.name}
                           </p>
                           <p className="text-[11px] text-muted-foreground font-medium">
-                            {money(stats.totalEarnedInMonth)} hakediş · {money(stats.paidInMonth)}{" "}
-                            ödendi
+                            {formatMoney(stats.totalEarnedInMonth)} hakediş ·{" "}
+                            {formatMoney(stats.paidInMonth)} ödendi
                           </p>
                         </div>
                       </div>
@@ -318,7 +378,7 @@ export function MonthSummaryScreen({ onWorkerClick }: MonthSummaryScreenProps) {
                                 : "text-muted-foreground"
                           }`}
                         >
-                          {money(stats.periodBalance)}
+                          {formatMoney(stats.periodBalance)}
                         </div>
                         <div className="text-[11px] text-muted-foreground">
                           {stats.periodBalance >= 0 ? "ödenecek" : "fazla ödeme"}
@@ -363,7 +423,9 @@ export function MonthSummaryScreen({ onWorkerClick }: MonthSummaryScreenProps) {
               <>
                 <span className="font-semibold text-foreground">{monthLabel}</span> kapatılacak. Bu
                 aya ait puantaj, gün verisi ve ödemeler değiştirilemez olur. Ödenecek kalan:{" "}
-                <span className="font-semibold text-foreground font-mono">{money(totals.due)}</span>
+                <span className="font-semibold text-foreground font-mono">
+                  {formatMoney(totals.due)}
+                </span>
                 .
               </>
             )}

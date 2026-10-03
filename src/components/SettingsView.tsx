@@ -13,9 +13,11 @@ import {
 import { Button } from "./ui/button";
 import { BackupSection } from "./BackupSection";
 import { LockSetupWizard } from "./LockSetupWizard";
+import { CsvExportSection } from "./CsvExportSection";
 import { PeriodLockSection } from "./PeriodLockSection";
 import { ReminderSection } from "./ReminderSection";
-import { getTriggerSetupError, getSchemaReport } from "../lib/db";
+import { getTriggerSetupError, getSchemaReport, getJournalModeWarning } from "../lib/db";
+import { usePeriodStore } from "../stores/periodStore";
 import { APP_VERSION } from "../lib/appInfo";
 
 const PALETTES: { id: ThemePalette; label: string; desc: string }[] = [
@@ -43,12 +45,19 @@ export function SettingsView({
   const toggleMode = useThemeStore((s) => s.toggleMode);
   const setPalette = useThemeStore((s) => s.setPalette);
 
+  // Dönem kilidi listesi okunamadıysa `isDateInClosedPeriod` fail-closed
+  // çalışır: HİÇBİR tarih kapalı sayılır ve hiçbir kayıt kaydedilemez.
+  // Kullanıcı bunun neden kaydedemediğini görmezse saatlerce kendini suçlar.
+  const periodError = usePeriodStore((s) => s.error);
+  const periodLoaded = usePeriodStore((s) => s.closedLoaded);
+  const journalWarning = getJournalModeWarning();
   return (
     <div className="flex flex-col h-full bg-background">
       <header className="pt-safe-header pb-4 px-5 border-b bg-card shrink-0 flex items-center gap-3">
         <button
           onClick={onBack}
-          className="w-10 h-10 rounded-control bg-muted/60 flex items-center justify-center active:scale-90 transition-all shrink-0"
+          aria-label="Geri"
+          className="tap-target rounded-control bg-muted/60 flex items-center justify-center active:scale-90 transition-all shrink-0"
         >
           <ArrowLeft className="w-5 h-5" />
         </button>
@@ -105,6 +114,40 @@ export function SettingsView({
             </div>
           </div>
         )}
+
+        {(periodError || !periodLoaded) && (
+          <div className="p-4 rounded-card border-2 border-bad/40 bg-bad-soft flex gap-3">
+            <AlertTriangle className="w-5 h-5 text-bad shrink-0 mt-0.5" />
+            <div className="min-w-0">
+              <h3 className="text-[13px] font-medium text-bad">Dönem kilidi verisi okunamadı</h3>
+              <p className="text-[11px] font-medium text-bad/90 mt-1 leading-relaxed">
+                Kapatılmış dönemlerin listesi yüklenemediği için dönem kilidi güvenli tarafta kapalı
+                tutuluyor: <strong>hiçbir puantaj, ücret veya ödeme kaydedemezsiniz.</strong> Sorun
+                kendiliğinden çözülürse bu uyarı kaybolur; çözülmezse uygulamayı yeniden başlatın.
+              </p>
+              {periodError && (
+                <p className="text-[10px] font-mono text-bad/80 mt-1.5 break-all">{periodError}</p>
+              )}
+            </div>
+          </div>
+        )}
+
+        {journalWarning && (
+          <div className="p-4 rounded-card border-2 border-amber-300 dark:border-amber-500/40 bg-warn-soft flex gap-3">
+            <AlertTriangle className="w-5 h-5 text-warn shrink-0 mt-0.5" />
+            <div className="min-w-0">
+              <h3 className="text-[13px] font-medium text-warn">Veritabanı günlük modu kapalı</h3>
+              <p className="text-[11px] font-medium text-amber-700/80 dark:text-amber-300/80 mt-1 leading-relaxed">
+                Veritabanı WAL (günlük) moduna geçemedi. Kayıtlarınız yine de saklanır, ancak ani
+                kapanma veya pil bitmesi verinin son durumda bozulmasına yol açabilir. Düzenli yedek
+                almanız önerilir.
+              </p>
+              <p className="text-[10px] font-mono text-amber-700/70 dark:text-amber-300/70 mt-1.5 break-all">
+                {journalWarning}
+              </p>
+            </div>
+          </div>
+        )}
         <div className="space-y-4">
           <h2 className="text-[11px] font-medium text-muted-foreground ml-1 flex items-center gap-1.5">
             <Palette className="w-3.5 h-3.5" /> Görünüm & Arayüz
@@ -120,7 +163,8 @@ export function SettingsView({
                 <button
                   key={p.id}
                   onClick={() => setPalette(p.id)}
-                  className={`flex flex-col items-center gap-1.5 p-2 rounded-control border-2 transition-all active:scale-95 ${
+                  aria-pressed={isActive}
+                  className={`tap-target flex flex-col items-center gap-1.5 p-2 rounded-control border-2 transition-all active:scale-95 ${
                     isActive
                       ? "border-primary bg-primary/5 shadow-sm"
                       : "border-transparent hover:border-border hover:bg-muted/30"
@@ -158,6 +202,7 @@ export function SettingsView({
           <div className="p-1.5 rounded-card border-2 bg-card flex items-center shadow-sm">
             <button
               onClick={() => themeMode === "dark" && toggleMode()}
+              aria-pressed={themeMode === "light"}
               className={`flex-1 h-12 rounded-control flex items-center justify-center gap-2 font-bold text-xs transition-all ${
                 themeMode === "light"
                   ? "bg-background shadow-md border text-foreground"
@@ -168,6 +213,7 @@ export function SettingsView({
             </button>
             <button
               onClick={() => themeMode === "light" && toggleMode()}
+              aria-pressed={themeMode === "dark"}
               className={`flex-1 h-12 rounded-control flex items-center justify-center gap-2 font-bold text-xs transition-all ${
                 themeMode === "dark"
                   ? "bg-background shadow-md border text-foreground"
@@ -206,6 +252,7 @@ export function SettingsView({
         <PeriodLockSection />
 
         <BackupSection />
+        <CsvExportSection />
 
         <div className="space-y-4 pt-6 border-t border-dashed">
           <div className="flex flex-col items-center justify-center gap-2 opacity-60">

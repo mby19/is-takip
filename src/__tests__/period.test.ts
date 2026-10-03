@@ -1,12 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 const executeQuery = vi.fn();
+const executeTransaction = vi.fn();
 const fetchQuery = vi.fn();
 
 vi.mock("../lib/db", () => ({
   executeQuery: (...a: unknown[]) => executeQuery(...a),
+  executeTransaction: (...a: unknown[]) => executeTransaction(...a),
   fetchQuery: (...a: unknown[]) => fetchQuery(...a),
-  executeTransaction: vi.fn(),
   getDb: vi.fn(),
   getTriggerSetupError: () => null,
 }));
@@ -16,11 +17,12 @@ import { usePeriodStore, isDateInClosedPeriod, ClosedPeriodError } from "../stor
 import { useAttendanceStore } from "../stores/attendanceStore";
 import { useMetricsStore } from "../stores/metricsStore";
 import { usePaymentStore } from "../stores/paymentStore";
-import { useWorkerStore } from "../stores/workerStore";
+import { useWorkerStore, RateChangeImpactError } from "../stores/workerStore";
 
 beforeEach(() => {
   executeQuery.mockReset().mockResolvedValue({ rowsAffected: 1 });
   fetchQuery.mockReset().mockResolvedValue([]);
+  executeTransaction.mockReset().mockResolvedValue(undefined);
   usePeriodStore.setState({ closed: [], earliestDataPeriod: null, isLoading: false });
 });
 
@@ -117,8 +119,11 @@ describe("kapalı dönem koruması", () => {
     expect(executeQuery).not.toHaveBeenCalled();
   });
 
-  it("ücret değişikliğinin kapalı döneme sarkmasını engeller", async () => {
+  it("KİLİTLİ OLMAYAN güncel ayı etkileyen ücret değişikliği onay gerektirmez", async () => {
+    // K2 kararı: "ay ortası zam" en sık kullanılan senaryo — güncel ay kapalı
+    // değilken onay diyaloğu boşuna açılmaz.
     const period = closeCurrent();
+    usePeriodStore.setState({ earliestDataPeriod: null, closed: [] });
     useWorkerStore.setState({
       workers: [
         {
@@ -131,9 +136,60 @@ describe("kapalı dönem koruması", () => {
         },
       ],
     });
+
     await expect(
       useWorkerStore.getState().updateWorker(1, "Test", 900, "GUNLUK", `${period}-01`),
-    ).rejects.toThrow(ClosedPeriodError);
+    ).resolves.toBeUndefined();
+  });
+
+  it("KAPALI güncel ayı etkileyen ücret değişikliği onay ister (L1)", async () => {
+    // Güncel ay da kapatılabilir; kapalı döneme onaysız ücret geçmişi yazılmaz.
+    const period = closeCurrent();
+    usePeriodStore.setState({ earliestDataPeriod: null });
+    useWorkerStore.setState({
+      workers: [
+        {
+          id: 1,
+          name: "Test",
+          daily_wage: 600,
+          worker_type: "GUNLUK",
+          is_active: true,
+          created_at: "2026-01-01",
+        },
+      ],
+    });
+
+    await expect(
+      useWorkerStore.getState().updateWorker(1, "Test", 900, "GUNLUK", `${period}-01`),
+    ).rejects.toThrow(RateChangeImpactError);
+
+    expect(executeTransaction).not.toHaveBeenCalled();
+  });
+
+  it("geçmişe yürüyen ücret değişikliği onaysız reddedilir", async () => {
+    // Gerçek para koruması: geçmişteki hakedişleri sessizce değiştiren bir
+    // ücret değişikliği, kullanıcı onayı olmadan yazılmaz.
+    usePeriodStore.setState({
+      closed: [{ period: "2026-01", closed_at: "2026-09-11 10:00:00", note: null }],
+      earliestDataPeriod: "2026-01",
+    });
+    useWorkerStore.setState({
+      workers: [
+        {
+          id: 1,
+          name: "Test",
+          daily_wage: 600,
+          worker_type: "GUNLUK",
+          is_active: true,
+          created_at: "2026-01-01",
+        },
+      ],
+    });
+
+    await expect(
+      useWorkerStore.getState().updateWorker(1, "Test", 900, "GUNLUK", "2026-01-01"),
+    ).rejects.toThrow(RateChangeImpactError);
+    expect(executeTransaction).not.toHaveBeenCalled();
   });
 
   it("açık dönemde yazmaya izin verir", async () => {
@@ -141,7 +197,8 @@ describe("kapalı dönem koruması", () => {
     await expect(
       useAttendanceStore.getState().markAttendance(1, "1999-01-10", "FULL"),
     ).resolves.toBeUndefined();
-    expect(executeQuery).toHaveBeenCalled();
+    expect(executeTransaction).toHaveBeenCalled();
+    expect(executeQuery).not.toHaveBeenCalled();
   });
 
   it("hata mesajı hangi dönemin kapalı olduğunu söyler", () => {

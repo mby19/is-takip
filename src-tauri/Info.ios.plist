@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>com.mby.istakip</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>istakip</string>
+			</array>
+		</dict>
+	</array>
+	<!--
+		App Store Connect her yüklemede "İhracat Uyumluluğu" sorularını elle
+		cevaplamayı istiyor; bu anahtar olmadan yükleme reddediliyor.
+
+		`false` DOĞRU beyandır: uygulamanın tek kriptografik kullanımı SHA-256
+		digest hesaplamak (`appLock.ts` — PIN kilidini doğrulamak için). Hash,
+		şifreleme değildir, anahtar üretmez, veri şifrelemez/çözmez; Apple'ın
+		kapsam dışı saydığı tek istisnadır. Şifreleme yapan bir kütüphane
+		eklenirse bu değer `true` yapılmalıdır.
+	-->
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
+</dict>
+</plist>

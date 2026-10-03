@@ -1,5 +1,6 @@
 import type { AuditLog, AttendanceStatus } from "../types";
 import { parseLogData, parseAttendanceSnapshot } from "./parseLogData";
+import { formatMoney } from "../lib/utils";
 
 export type AuditTone = "ok" | "warn" | "bad" | "info" | "neutral";
 
@@ -77,13 +78,25 @@ export function formatLogDate(value?: string | null): string {
   return `${parseInt(d, 10)} ${MONTHS[index]} ${y}`;
 }
 
-const money = (value?: string | number | null): string => {
-  const n = Number(value ?? 0);
-  if (!Number.isFinite(n)) return "—";
-  return `₺${Math.round(n).toLocaleString("tr-TR")}`;
-};
-
-const REVERTABLE_TABLES = ["attendance", "daily_metrics", "payments", "workers"];
+/**
+ * Geri alınabilir tablolar — TEK KAYNAK.
+ *
+ * Hem ekranda "Geri Al" düğmesinin görünüp görünmeyeceğini, hem de
+ * `revertStrategies`'ın güvenlik kontrolünü belirler. İki ayrı kopya
+ * tutulduğunda tablo eklendiğinde biri unutuluyor ve düğme hiç görünmese
+ * bile kayıt geri alınabiliyor ya da tam tersi.
+ *
+ * Import yönü: `revertStrategies` → `auditLogFormat` (tek yönlü; döngüsel
+ * import yok). `auditLogFormat` bir saf görüntü katmanı olduğu için liste
+ * burada durur.
+ */
+export const REVERTABLE_TABLES: readonly string[] = [
+  "attendance",
+  "daily_metrics",
+  "payments",
+  "worker_rate_history",
+  "workers",
+];
 const REVERTABLE_ACTIONS = ["INSERT", "UPDATE", "DELETE"];
 
 /**
@@ -217,13 +230,17 @@ export function describeAuditLog(
 
     const details: AuditDetail[] = [];
     if (log.action_type === "UPDATE" && od?.amount !== nd?.amount) {
-      details.push({ label: "Tutar", value: money(nd?.amount), was: money(od?.amount) });
+      details.push({
+        label: "Tutar",
+        value: formatMoney(nd?.amount),
+        was: formatMoney(od?.amount),
+      });
     }
     if (description) details.push({ label: "Açıklama", value: description });
 
     return {
       kind: "payment",
-      title: `${workerName} · ${money(amount)} ${verb}`,
+      title: `${workerName} · ${formatMoney(amount)} ${verb}`,
       subtitle: formatLogDate(date),
       tone: log.action_type === "DELETE" ? "bad" : "neutral",
       details,
@@ -242,7 +259,7 @@ export function describeAuditLog(
         title: `${name} eklendi`,
         subtitle: type,
         tone: "ok",
-        details: nd?.wage ? [{ label: "Yevmiye", value: money(nd.wage) }] : [],
+        details: nd?.wage ? [{ label: "Yevmiye", value: formatMoney(nd.wage) }] : [],
         revertable,
       };
     }
@@ -261,7 +278,7 @@ export function describeAuditLog(
     if (od?.name !== nd?.name)
       details.push({ label: "İsim", value: nd?.name ?? "", was: od?.name });
     if (od?.wage !== nd?.wage)
-      details.push({ label: "Yevmiye", value: money(nd?.wage), was: money(od?.wage) });
+      details.push({ label: "Yevmiye", value: formatMoney(nd?.wage), was: formatMoney(od?.wage) });
     if (od?.type !== nd?.type)
       details.push({
         label: "Tip",
@@ -302,14 +319,14 @@ export function describeAuditLog(
     if (!od || changed("earned"))
       details.push({
         label: "Ciro",
-        value: money(nd?.earned),
-        was: od ? money(od.earned) : undefined,
+        value: formatMoney(nd?.earned),
+        was: od ? formatMoney(od.earned) : undefined,
       });
     if (!od || changed("expenses"))
       details.push({
         label: "Gider",
-        value: money(nd?.expenses),
-        was: od ? money(od.expenses) : undefined,
+        value: formatMoney(nd?.expenses),
+        was: od ? formatMoney(od.expenses) : undefined,
       });
 
     // Puantaj anlık görüntüsündeki değişiklikler
@@ -341,6 +358,47 @@ export function describeAuditLog(
       title: summary,
       subtitle: formatLogDate(date),
       tone: log.action_type === "DELETE" ? "bad" : "neutral",
+      details,
+      revertable,
+    };
+  }
+
+  // --- Ücret geçmişi ---
+  // Hesaplama `worker_rate_history` kaydını tercih eder; bu yüzden denetim
+  // izinde görünmezse ekranda gösterilen ücret ile ödenen ücret ayrışır.
+  if (log.entity_table === "worker_rate_history") {
+    const validFrom = od?.valid_from ?? nd?.valid_from;
+    const verb =
+      log.action_type === "INSERT"
+        ? "ücret kaydı eklendi"
+        : log.action_type === "DELETE"
+          ? "ücret kaydı silindi"
+          : "ücret güncellendi";
+
+    const details: AuditDetail[] = [];
+    if (log.action_type !== "INSERT") {
+      details.push({
+        label: "Geçerli olduğu tarih",
+        value: formatLogDate(validFrom) || "—",
+        tone: "neutral",
+      });
+    }
+    if (od?.wage !== nd?.wage) {
+      details.push({ label: "Yevmiye", value: formatMoney(nd?.wage), was: formatMoney(od?.wage) });
+    }
+    if (od?.type !== nd?.type && (od?.type || nd?.type)) {
+      details.push({
+        label: "Tip",
+        value: nd?.type === "ORTAK" ? "Ortak" : "Yevmiyeli",
+        was: od?.type === "ORTAK" ? "Ortak" : "Yevmiyeli",
+      });
+    }
+
+    return {
+      kind: "worker",
+      title: `${workerName} · ${verb}`,
+      subtitle: log.action_type === "INSERT" ? formatLogDate(validFrom) : undefined,
+      tone: log.action_type === "DELETE" ? "bad" : "warn",
       details,
       revertable,
     };

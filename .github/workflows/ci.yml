@@ -1,24 +1,49 @@
 name: CI
 
+# Not — action pin'leme politikası:
+# Tüm `uses:` referansları 40 karakterlik commit SHA'sına sabitlenmiştir; yorum
+# satırında sürüm etiketi durur (ör. `# v7.0.1`). Mutable bir tag (`@v7`) tag
+# sahibi tarafından sessizce başka bir commit'e taşınabilir ve PR'lardan gelen
+# kod, üçüncü taraf bir action'ın keyfi kodunu çalıştıracak hale gelir — public
+# repo için en ucuz saldırı yüzeyi budur. GitHub OpenSSF Scorecard'daki
+# "Pinned-Dependencies" kontrolü de SHA istiyor. Dependabot'un
+# `github-actions` ekosistemi SHA'ları güncellediği için bu, sürüm takibinden
+# vazgeçmek anlamına gelmez; yorum satırındaki etiket de güncellenir.
+
 on:
   push:
     branches: [main, master]
   pull_request:
     branches: [main, master]
 
+# Least privilege: hiçbir CI işi repo'ya yazmaz. `contents: read` dışında
+# ayrıcalık verilmediği için fork PR'larından gelen kod sırlara veya içeriklere
+# erişemez.
+permissions:
+  contents: read
+
+# Aynı ref'e iki paralel push: eski koşu iptal edilir (maliyet). Main
+# push'larında iptal YAPILMAZ — native build 10-20 dakika sürüyor, yarısını
+# iptal edip baştan başlatmak dakikaları boşa harcar.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  CARGO_TERM_COLOR: always
 
 jobs:
   lint:
     name: Lint & TypeCheck
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020f # v7.0.0
         with:
           node-version: 22
+          # npm cache'i node_modules yerine ~/.npm altında tutar; anahtar
+          # package-lock.json'dan türetilir, lock değişince otomatik düşer.
           cache: npm
       - run: npm ci
       - run: npm run lint
@@ -27,9 +52,10 @@ jobs:
   test:
     name: Test
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020f # v7.0.0
         with:
           node-version: 22
           cache: npm
@@ -39,47 +65,74 @@ jobs:
   e2e:
     name: E2E
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020f # v7.0.0
         with:
           node-version: 22
           cache: npm
       - run: npm ci
+
+      # e2e/ kendi package-lock.json'ına sahip; ana dizindeki npm cache'i onu
+      # kapsamaz. Playwright tarayıcıları ~150 MB indirilir, bu cache olmadan
+      # her koşuda yeniden indiriliyor.
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-${{ hashFiles('e2e/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-playwright-
+
+      # Not: `npm run build` ayrı bir adım değil — playwright.config.ts'in
+      # webServer.command'ı `npm run build && npx vite preview` çalıştırır, yani
+      # üretim derlemesi testlerden HEP önce tamamlanır. Kök `npm ci` yukarıda
+      # kurulu olduğu için derleme bağımlılıkları hazır. `cache: npm` yalnızca
+      # ~/.npm önbelleğini tutar, dist/ çıktısını etkilemez.
       - run: npm ci
         working-directory: e2e
       - run: npx playwright install --with-deps chromium
         working-directory: e2e
       - run: npx playwright test
         working-directory: e2e
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: failure()
         with:
           name: playwright-report
           path: e2e/test-results/
           retention-days: 3
+          if-no-files-found: ignore
 
   build-frontend:
     name: Build Frontend
     runs-on: ubuntu-latest
     needs: [lint, test, e2e]
+    timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020f # v7.0.0
         with:
           node-version: 22
           cache: npm
       - run: npm ci
       - run: npm run build
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: dist
           path: dist/
           retention-days: 3
 
+  # Maliyet notu: 4 platformda native `tauri build` tek koşuda ~40-60 runner
+  # dakikası yakar. Bu iş YALNIZCA main'e push'ta çalışır; PR'larda lint +
+  # vitest + e2e + frontend build yeterli geri bildirim verir ve fork'lardan
+  # gelen kod imzalama sırlarına hiç yaklaşmaz. Etiketle gelen yayınlar ise
+  # release.yml'de derleniyor.
   build-tauri:
     name: Build Tauri (${{ matrix.platform }})
+    if: github.event_name == 'push'
     needs: [lint, test, e2e]
+    runs-on: ${{ matrix.platform }}
+    timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
@@ -92,31 +145,34 @@ jobs:
             target: x86_64-unknown-linux-gnu
           - platform: windows-latest
             target: x86_64-pc-windows-msvc
-    runs-on: ${{ matrix.platform }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020f # v7.0.0
         with:
           node-version: 22
           cache: npm
 
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@7e38f4b43b4db5c8dd498af069a4f6196df1d067 # v1
         with:
           targets: ${{ matrix.target }}
 
-      - uses: Swatinem/rust-cache@v2
+      # Rust derleme önbelleği: target/ ve ~/.cargo, anahtar Cargo.lock ile
+      # türetilir. Bu olmadan her koşu sıfırdan derliyor.
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           workspaces: src-tauri
 
       - run: npm ci
       - run: npx tauri build --target ${{ matrix.target }}
         env:
+          # tauri.conf.json'da createUpdaterArtifacts: true olduğu için derleme
+          # imzalama anahtarı olmadan başarısız oluyor.
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: tauri-build-${{ matrix.platform }}-${{ matrix.target }}
           path: src-tauri/target/${{ matrix.target }}/release/bundle/

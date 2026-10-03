@@ -1,0 +1,104 @@
+name: Bug report
+description: Report something that does not work as expected
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report this.
+
+        **Do not report security vulnerabilities here.** See `SECURITY.md` in the repository root.
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: What happened?
+      description: One or two sentences. What is broken?
+      placeholder: The month summary shows a total that does not match the sum of the days.
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro-name
+    attributes:
+      label: Short reproduction name
+      description: A short slug we can use to find this bug in our issue list, e.g. "closed period still editable".
+      placeholder: closed-period-still-editable
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Open the September period
+        2. Try to edit the attendance of the 10th
+        3. Observe that the edit is accepted
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behaviour
+      description: What did you think would happen?
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behaviour
+      description: What happened instead? Include the exact error message if there was one.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      options:
+        - Desktop (macOS)
+        - Desktop (Windows)
+        - Desktop (Linux)
+        - Android
+        - iOS
+        - Other / unknown
+    validations:
+      required: true
+
+  - type: input
+    id: app-version
+    attributes:
+      label: Application version
+      description: The version shown on the Settings screen (it comes from `package.json` at build time).
+      placeholder: 0.1.0
+    validations:
+      required: true
+
+  - type: input
+    id: os
+    attributes:
+      label: Operating system and version
+      placeholder: macOS 15.6 / Android 15
+    validations:
+      required: true
+
+  - type: input
+    id: device
+    attributes:
+      label: Device model
+      description: Especially important for Android and iOS reports.
+      placeholder: Pixel 8a
+    validations:
+      required: false
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: Anything else?
+      description: Logs, screenshots, or anything that helps reproduce the problem.
+    validations:
+      required: false

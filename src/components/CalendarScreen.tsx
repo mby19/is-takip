@@ -13,9 +13,11 @@ import type { Worker } from "../types";
 interface CalendarScreenProps {
   onDayClick: (date: string) => void;
   onWorkerClick: (worker: Worker) => void;
+  /** Boş durumdaki "Personel Ekle" düğmesi için; bkz. `EmptyState`. */
+  onGoToWorkers?: () => void;
 }
 
-export function CalendarScreen({ onDayClick, onWorkerClick }: CalendarScreenProps) {
+export function CalendarScreen({ onDayClick, onWorkerClick, onGoToWorkers }: CalendarScreenProps) {
   const mode = useThemeStore((s) => s.mode);
   const toggleMode = useThemeStore((s) => s.toggleMode);
 
@@ -33,14 +35,14 @@ export function CalendarScreen({ onDayClick, onWorkerClick }: CalendarScreenProp
         <button
           onClick={() => setCurrentDate(subMonths(currentDate, 1))}
           aria-label="Önceki ay"
-          className="w-10 h-10 rounded-control flex items-center justify-center text-muted-foreground hover:bg-muted hover:text-foreground active:scale-90 transition-all"
+          className="tap-target w-10 h-10 rounded-control flex items-center justify-center text-muted-foreground hover:bg-muted hover:text-foreground active:scale-90 transition-all"
         >
           <ChevronLeft className="w-5 h-5" />
         </button>
 
         <button
           onClick={() => setIsPickerOpen(true)}
-          className="flex-1 min-w-0 h-10 rounded-control flex items-center justify-center gap-1.5 hover:bg-muted active:scale-[0.98] transition-all"
+          className="tap-target flex-1 min-w-0 h-10 rounded-control flex items-center justify-center gap-1.5 hover:bg-muted active:scale-[0.98] transition-all"
         >
           <span className="text-[17px] font-semibold tracking-tight capitalize truncate">
             {format(currentDate, "MMMM yyyy", { locale: tr })}
@@ -51,7 +53,7 @@ export function CalendarScreen({ onDayClick, onWorkerClick }: CalendarScreenProp
         <button
           onClick={() => setCurrentDate(addMonths(currentDate, 1))}
           aria-label="Sonraki ay"
-          className="w-10 h-10 rounded-control flex items-center justify-center text-muted-foreground hover:bg-muted hover:text-foreground active:scale-90 transition-all"
+          className="tap-target w-10 h-10 rounded-control flex items-center justify-center text-muted-foreground hover:bg-muted hover:text-foreground active:scale-90 transition-all"
         >
           <ChevronRight className="w-5 h-5" />
         </button>
@@ -62,7 +64,7 @@ export function CalendarScreen({ onDayClick, onWorkerClick }: CalendarScreenProp
         <button
           onClick={toggleMode}
           aria-label={mode === "dark" ? "Açık temaya geç" : "Koyu temaya geç"}
-          className="w-10 h-10 rounded-control flex items-center justify-center text-muted-foreground hover:bg-muted hover:text-foreground active:scale-90 transition-all shrink-0"
+          className="tap-target w-10 h-10 rounded-control flex items-center justify-center text-muted-foreground hover:bg-muted hover:text-foreground active:scale-90 transition-all shrink-0"
         >
           {mode === "dark" ? (
             <Sun className="w-[18px] h-[18px]" />
@@ -86,6 +88,7 @@ export function CalendarScreen({ onDayClick, onWorkerClick }: CalendarScreenProp
           currentDate={currentDate}
           onDayClick={onDayClick}
           onWorkerClick={onWorkerClick}
+          onGoToWorkers={onGoToWorkers}
         />
       </div>
     </div>

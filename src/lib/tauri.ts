@@ -36,7 +36,34 @@ export const saveTextFileToDownloads = async (fileName: string, content: string)
 export interface BackupFileInfo {
   name: string;
   size: number;
+  /**
+   * true ise bu dosya geri yükleme öncesi otomatik üretilmiş güvenlik
+   * yedeğidir. Arayüz bunu etiketlemek için kullanır — kullanıcı bu
+   * dosyanın kendi yedeği değil, uygulamanın kendi güvenlik kopyası
+   * olduğunu bilmelidir.
+   */
+  isAutomatic: boolean;
 }
+
+/** Yedek dosyası adı önekleri. `backup.ts` bunları buradan alır. */
+export const MANUAL_BACKUP_PREFIX = "is_takip_backup_";
+export const AUTOMATIC_BACKUP_PREFIX = "is_takip_otomatik_yedek_";
+export const BACKUP_FILE_PREFIXES = [MANUAL_BACKUP_PREFIX, AUTOMATIC_BACKUP_PREFIX] as const;
+
+export const isBackupFileName = (name: string): boolean =>
+  name.endsWith(".json") && BACKUP_FILE_PREFIXES.some((prefix) => name.startsWith(prefix));
+
+export const isAutomaticBackupFileName = (name: string): boolean =>
+  name.startsWith(AUTOMATIC_BACKUP_PREFIX) && name.endsWith(".json");
+
+/**
+ * İndirilenler klasöründeki yedekleme dosyalarını listeler.
+ *
+ * Hem kullanıcının aldığı `is_takip_backup_` dosyaları hem de geri yükleme
+ * öncesi otomatik üretilen `is_takip_otomatik_yedek_` dosyaları listelenir;
+ * otomatik yedekleri gizlemek kullanıcıyı "yedeklerim kayboldu" izlenimine
+ * sokuyordu.
+ */
 
 export const listBackupFiles = async (): Promise<BackupFileInfo[]> => {
   const { readDir, stat, BaseDirectory } = await import("@tauri-apps/plugin-fs");
@@ -45,15 +72,20 @@ export const listBackupFiles = async (): Promise<BackupFileInfo[]> => {
 
   const backupFiles: BackupFileInfo[] = [];
   for (const entry of entries) {
-    if (entry.name && entry.name.startsWith("is_takip_backup_") && entry.name.endsWith(".json")) {
+    if (entry.name && isBackupFileName(entry.name)) {
       try {
         const fileStats = await stat(entry.name, { baseDir: BaseDirectory.Download });
         backupFiles.push({
           name: entry.name,
           size: fileStats.size,
+          isAutomatic: isAutomaticBackupFileName(entry.name),
         });
       } catch {
-        backupFiles.push({ name: entry.name, size: 0 });
+        backupFiles.push({
+          name: entry.name,
+          size: 0,
+          isAutomatic: isAutomaticBackupFileName(entry.name),
+        });
       }
     }
   }

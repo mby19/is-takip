@@ -14,9 +14,6 @@ export const metricsRepository = {
       end,
     ]),
 
-  findIdByDate: (date: string): Promise<{ id: number }[]> =>
-    fetchQuery<{ id: number }>("SELECT id FROM daily_metrics WHERE date = ?", [date]),
-
   /** Tek atomik ifade — oku-sonra-yaz yarışını önler. */
   upsert: (
     date: string,

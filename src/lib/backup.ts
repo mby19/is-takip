@@ -1,6 +1,11 @@
 import { fetchQuery, executeQuery, executeTransaction } from "./db";
 import { DROP_TRIGGERS, CREATE_TRIGGERS, TRIGGER_SCHEMA_VERSION } from "../schema/triggers";
-import { isTauri, saveTextFileToDownloads } from "./tauri";
+import {
+  isTauri,
+  saveTextFileToDownloads,
+  MANUAL_BACKUP_PREFIX,
+  AUTOMATIC_BACKUP_PREFIX,
+} from "./tauri";
 import { sqlLiteral } from "./sql";
 import { APP_VERSION } from "./appInfo";
 import type { AttendanceStatus, WorkerType } from "../types";
@@ -10,15 +15,36 @@ import type { AttendanceStatus, WorkerType } from "../types";
  *
  * 1 — ilk biçim (worker_rate_history yok)
  * 2 — worker_rate_history, app_version ve schema_version eklendi
+ * 3 — audit_logs.reverted_at eklendi (geri alma işareti korunur)
+ * 4 — worker_rate_history.id eklendi (geri alma denetim kaydıyla eşleşir)
  *
  * KURAL: Mevcut alan adları asla değiştirilmez veya kaldırılmaz, yalnızca
  * yeni alan eklenir. Böylece eski uygulama sürümleri yeni yedekleri okumaya
- * devam edebilir.
+ * devam eder.
+ *
+ * Sürüm 3'te `reverted_at` ZORUNLUDUR: bu alan geri alınmış bir denetim
+ * kaydını taşır. Eksik bir yedekte alan null sayılıp aynı işlemin ikinci kez
+ * geri alınabilir hâle gelirdi. Bu yüzden v3 yedeklerinde eksik alan sessizce
+ * doldurulmaz, yedeğin bozuk sayılıp reddedilir. v1/v2 yedekleri (geri alma
+ * işareti hiç yoktu) etkilenmez.
+ *
+ * Sürüm 4 `worker_rate_history.id` alanını EKLER ve bu alan opsiyoneldir:
+ * v1-v3 yedeklerinde yoktur ve o yedeklerde id'ler geri yükleme sırasında
+ * yeniden atanır (v3'e kadar olan davranış). Alan neden gerekli:
+ * `audit_logs.record_id` bu tablonun `id` değerine referans verir; id
+ * yeniden atanırsa denetim kaydı başka bir çalışanın ücret geçmişine işaret
+ * eder ve "Geri al" sessizce YANLIŞ satıra düşer (ya da hiçbir satıra
+ * düşmez). Bu, sessiz yanlış maaştır.
  */
-export const BACKUP_FORMAT_VERSION = 2;
+export const BACKUP_FORMAT_VERSION = 4;
 
 /** Bu uygulamanın okuyabileceği en yüksek biçim sürümü. */
 const MAX_SUPPORTED_VERSION = BACKUP_FORMAT_VERSION;
+
+// Yedek dosyası adı tanıyıcıları `tauri.ts`'te yaşar: dosya listeleme ve
+// dosya adı üretme aynı kaynaktan beslenmeli, yoksa liste ile üretim
+// birbirinden ayrılır ve kullanıcının yedeği "yok" görünür.
+export { BACKUP_FILE_PREFIXES, isBackupFileName, isAutomaticBackupFileName } from "./tauri";
 
 const VALID_STATUSES: AttendanceStatus[] = ["FULL", "HALF", "ABSENT", "HOLIDAY"];
 const VALID_WORKER_TYPES: WorkerType[] = ["ORTAK", "GUNLUK"];
@@ -74,6 +100,23 @@ const bool = (value: unknown): 0 | 1 => {
   return 0;
 };
 
+/**
+ * NULL olabilen metin alanı.
+ *
+ * `String(null)` "null" ürettiği için eski kod boş bir alanı veritabanına
+ * metin olarak yazıyordu. Burada null/undefined gerçek NULL'a çevrilir; nesne,
+ * dizi ve mantıksal değerler ise sessizce yutulmak yerine reddedilir.
+ */
+const nullableText = (value: unknown, field: string, row: number): string | null => {
+  if (value === null || value === undefined) return null;
+  if (typeof value === "string") return value;
+  // SQLite bir zaman damgasını sayı olarak saklamış olabilir; metne çevir.
+  if (typeof value === "number" && Number.isFinite(value)) return String(value);
+  throw new BackupError(
+    `${field} alanı metin veya null olmalı (satır ${row + 1}): ${typeof value}`,
+  );
+};
+
 interface NormalizedBackup {
   version: number;
   exported_at: string;
@@ -87,7 +130,15 @@ interface NormalizedBackup {
     color: string | null;
     short_label: string | null;
   }[];
+  /**
+   * `id` v1-v3 yedeklerinde yoktur; o durumda `null` gelir ve geri yüklemede
+   * SQLite yeni değer atar. v4+ yedeklerinde korunur — `audit_logs.record_id`
+   * bu değere referans verir ve id kayarsa "Geri al" yanlış satıra düşer.
+   *
+   * `created_at` yine taşınmaz: hesaplamalarda kullanılmaz.
+   */
   rates: {
+    id: number | null;
     worker_id: number;
     valid_from: string;
     daily_wage: number;
@@ -118,6 +169,8 @@ interface NormalizedBackup {
     old_data: string | null;
     new_data: string | null;
     created_at: string | null;
+    /** Dolu ise bu denetim kaydı geri alınmıştır. Geri yüklemeden sonra korunur. */
+    reverted_at: string | null;
   }[];
 }
 
@@ -164,11 +217,10 @@ export function validateBackup(raw: unknown): NormalizedBackup {
       name: text(row.name, "workers.name", i),
       daily_wage: num(row.daily_wage ?? 0, "workers.daily_wage", i),
       worker_type,
-      created_at: row.created_at === undefined ? null : String(row.created_at),
+      created_at: nullableText(row.created_at, "workers.created_at", i),
       is_active: bool(row.is_active ?? 1),
-      color: row.color === null || row.color === undefined ? null : String(row.color),
-      short_label:
-        row.short_label === null || row.short_label === undefined ? null : String(row.short_label),
+      color: nullableText(row.color, "workers.color", i),
+      short_label: nullableText(row.short_label, "workers.short_label", i),
     };
   });
 
@@ -209,21 +261,32 @@ export function validateBackup(raw: unknown): NormalizedBackup {
       worker_id: num(row.worker_id, "payments.worker_id", i),
       amount: num(row.amount ?? 0, "payments.amount", i),
       date: text(row.date, "payments.date", i),
-      description:
-        row.description === null || row.description === undefined ? null : String(row.description),
+      description: nullableText(row.description, "payments.description", i),
     };
   });
 
+  // Denetim günlüğü. `reverted_at` geri alınmış kaydı işaretler; bu alan
+  // yedeğe girmezse geri yükleme sonrası aynı işlem ikinci kez geri alınabilir
+  // hâle gelir. Bu yüzden v3+ yedeklerinde alanın KENDİSİ bulunmalıdır —
+  // null veya tarih olabilir, ama hiç yok olamaz.
   const audit_logs = asArray(b.audit_logs, "audit_logs").map((r, i) => {
     const row = (r ?? {}) as Record<string, unknown>;
+    if (version >= 3 && !("reverted_at" in row)) {
+      throw new BackupError(
+        `audit_logs.reverted_at alanı eksik (satır ${i + 1}). ` +
+          `Bu yedek bozuk — geri alma işaretleri kaybolursa aynı işlem iki kez ` +
+          `geri alınabilir. Geri yükleme yapılmadı, mevcut verileriniz duruyor.`,
+      );
+    }
     return {
       id: num(row.id, "audit_logs.id", i),
       action_type: text(row.action_type, "audit_logs.action_type", i),
       entity_table: text(row.entity_table, "audit_logs.entity_table", i),
       record_id: num(row.record_id ?? 0, "audit_logs.record_id", i),
-      old_data: row.old_data === null || row.old_data === undefined ? null : String(row.old_data),
-      new_data: row.new_data === null || row.new_data === undefined ? null : String(row.new_data),
-      created_at: row.created_at === undefined ? null : String(row.created_at),
+      old_data: nullableText(row.old_data, "audit_logs.old_data", i),
+      new_data: nullableText(row.new_data, "audit_logs.new_data", i),
+      created_at: nullableText(row.created_at, "audit_logs.created_at", i),
+      reverted_at: nullableText(row.reverted_at, "audit_logs.reverted_at", i),
     };
   });
 
@@ -233,8 +296,8 @@ export function validateBackup(raw: unknown): NormalizedBackup {
     const row = (r ?? {}) as Record<string, unknown>;
     return {
       period: text(row.period, "closed_periods.period", i),
-      closed_at: row.closed_at === undefined ? null : String(row.closed_at),
-      note: row.note === null || row.note === undefined ? null : String(row.note),
+      closed_at: nullableText(row.closed_at, "closed_periods.closed_at", i),
+      note: nullableText(row.note, "closed_periods.note", i),
     };
   });
 
@@ -249,6 +312,12 @@ export function validateBackup(raw: unknown): NormalizedBackup {
             | WorkerType
             | "";
           return {
+            // v1-v3 yedeklerinde alan yoktur; `null` gelir ve geri yüklemede
+            // id'yi SQLite'a bırakır (v3'e kadarki davranış).
+            id:
+              row.id === undefined || row.id === null
+                ? null
+                : num(row.id, "worker_rate_history.id", i),
             worker_id: num(row.worker_id, "worker_rate_history.worker_id", i),
             valid_from: text(row.valid_from, "worker_rate_history.valid_from", i),
             daily_wage: num(row.daily_wage ?? 0, "worker_rate_history.daily_wage", i),
@@ -258,6 +327,7 @@ export function validateBackup(raw: unknown): NormalizedBackup {
           };
         })
       : workers.map((w) => ({
+          id: null,
           worker_id: w.id,
           valid_from: "2000-01-01",
           daily_wage: w.daily_wage,
@@ -282,19 +352,59 @@ export function validateBackup(raw: unknown): NormalizedBackup {
 // ---------------------------------------------------------------------------
 
 /**
- * İsteğe bağlı tablodan okur. Tablo yoksa boş döner.
+ * Tablo gerçekten var mı diye bakar.
  *
- * Şema onarımı açılışta bu tabloları tamamlıyor; yine de yedek alma
- * eksik bir tablo yüzünden ASLA başarısız olmamalı — yedek, kullanıcının
- * verisini kurtaran son mekanizma.
+ * `fetchOptional` ile karıştırılmamalı: "tablo yok" ile "tablo okunamadı"
+ * farklı durumlardır. İkincisi sessizce yutulursa yedek eksik çıkar ve
+ * geri yükleme o eksik veriyi kalıcı olarak siler.
+ */
+const tableExists = async (table: string): Promise<boolean> => {
+  const rows = await fetchQuery<{ n: number }>(
+    "SELECT COUNT(*) AS n FROM sqlite_master WHERE type = 'table' AND name = ?",
+    [table],
+  );
+  return Number(rows[0]?.n ?? 0) > 0;
+};
+
+/**
+ * İsteğe bağlı tablodan okur.
+ *
+ * Tablo YOKSA boş döner — şema onarımı açılışta bu tabloları tamamlıyor, ve
+ * yedek alma eksik bir tablo yüzünden başarısız olmamalı (yedek, kullanıcının
+ * verisini kurtaran son mekanizma).
+ *
+ * Tablo VARSA okuma hatası yutulmaz: aksi halde yedek sessizce eksik çıkar ve
+ * geri yüklemede o tablo kalıcı olarak boşalır. Böyle bir hata yedek almayı
+ * durdurur — mevcut veri hâlâ diskte durur, yedek alamamak onu silmez.
  */
 const fetchOptional = async (table: string): Promise<unknown[]> => {
-  try {
-    return await fetchQuery(`SELECT * FROM ${table}`);
-  } catch (err: unknown) {
-    console.warn(`[Yedek] ${table} okunamadı, boş geçiliyor:`, err);
+  if (!(await tableExists(table))) {
+    console.warn(`[Yedek] ${table} tablosu yok, boş geçiliyor.`);
     return [];
   }
+  return fetchQuery(`SELECT * FROM ${table}`);
+};
+
+/**
+ * Denetim günlüğünü okur.
+ *
+ * `reverted_at` kolonu şema onarımı yapılamamışsa yoktur. Bu durumda her
+ * satıra `reverted_at: null` yazılır — anahtar yedekte BULUNUR, yani v3
+ * biçim doğrulaması geçer ve geri yükleme tutarlı kalır. Gerçek veri
+ * zaten o kolon olmadan geri alınamaz durumdadır; sessizce "geri alınmamış"
+ * göstermektense şemadaki bu eksikliği kayda geçiriyoruz.
+ */
+const fetchAuditLogs = async (): Promise<Record<string, unknown>[]> => {
+  const rows = await fetchQuery<Record<string, unknown>>("SELECT * FROM audit_logs");
+  const hasRevertColumn =
+    rows.length === 0 || Object.prototype.hasOwnProperty.call(rows[0], "reverted_at");
+  if (hasRevertColumn) return rows;
+
+  console.error(
+    "[Yedek] audit_logs.reverted_at kolonu yok. Geri alma işaretleri yedeğe " +
+      "giremiyor; yedekten geri yükleme geri alma korumasını kaybettirir.",
+  );
+  return rows.map((row) => ({ ...row, reverted_at: null }));
 };
 
 const buildBackupJson = async (): Promise<{ json: string; summary: BackupSummary }> => {
@@ -302,7 +412,7 @@ const buildBackupJson = async (): Promise<{ json: string; summary: BackupSummary
   const attendance = await fetchQuery("SELECT * FROM attendance");
   const daily_metrics = await fetchQuery("SELECT * FROM daily_metrics");
   const payments = await fetchQuery("SELECT * FROM payments");
-  const audit_logs = await fetchQuery("SELECT * FROM audit_logs");
+  const audit_logs = await fetchAuditLogs();
   const worker_rate_history = await fetchOptional("worker_rate_history");
   const closed_periods = await fetchOptional("closed_periods");
 
@@ -371,7 +481,7 @@ const writeBackupFile = async (fileName: string, json: string): Promise<string> 
 /** Kullanıcı tarafından başlatılan yedek alma. */
 export const exportDatabase = async (): Promise<string> => {
   const { json } = await buildBackupJson();
-  const fileName = timestampedName("is_takip_backup_");
+  const fileName = timestampedName(MANUAL_BACKUP_PREFIX);
 
   const fullPath = await writeBackupFile(fileName, json);
 
@@ -392,7 +502,7 @@ export const exportDatabase = async (): Promise<string> => {
 /** Geri yükleme öncesi otomatik güvenlik yedeği. */
 export const createSafetyBackup = async (): Promise<string> => {
   const { json } = await buildBackupJson();
-  const fileName = timestampedName("is_takip_otomatik_yedek_");
+  const fileName = timestampedName(AUTOMATIC_BACKUP_PREFIX);
   return writeBackupFile(fileName, json);
 };
 
@@ -428,6 +538,18 @@ export interface ImportResult {
  *
  * Üçüncü adım ya tamamen uygulanır ya hiç uygulanmaz; ikinci adım ise
  * beklenmedik bir durumda elle dönüş imkânı bırakır.
+ *
+ * YABANCI ANAHTAR SIRASI (doğrulanmış):
+ *  Silme: çocuk → ebeveyn. `attendance`, `payments` ve `worker_rate_history`
+ *  `workers(id)` yabancı anahtarı taşır; bu yüzden `workers` en SON silinir.
+ *  Yazma: ebeveyn → çocuk. `workers` önce yazılır, FK'si ona bağlı tablolar
+ *  sonra. `closed_periods` yabancı anahtarı yoktur ama sona bırakıldı.
+ *
+ * TETİKLEYİCİLER: yazma sırasında denetim tetikleyicileri açık olsaydı her
+ * satır için ek denetim kaydı üretilir ve yedekten gelen geçmiş, yeni
+ * INSERT/UPDATE kayıtlarıyla kirlenirdi. Bu yüzden önce düşürülüyor, veri
+ * yazıldıktan sonra geri kuruluyor. `DROP_TRIGGERS` transaction içinde
+ * olduğu için bir hata olursa tetikleyiciler de eski hâline döner.
  */
 export const importDatabase = async (jsonString: string): Promise<ImportResult> => {
   let parsed: unknown;
@@ -439,7 +561,22 @@ export const importDatabase = async (jsonString: string): Promise<ImportResult> 
 
   const data = validateBackup(parsed);
 
-  const safetyBackupPath = await createSafetyBackup();
+  // Güvenlik yedeği yazılamazsa geri yükleme HİÇ başlamaz: transaction'a
+  // girilmeden hata fırlatılır, mevcut veri yerinde kalır. Kullanıcıya
+  // neden olduğunu açıkça söylüyoruz — sessizce devam etmek, güvenlik ağı
+  // olmadan veri silmek demektir.
+  let safetyBackupPath: string;
+  try {
+    safetyBackupPath = await createSafetyBackup();
+  } catch (err: unknown) {
+    throw new BackupError(
+      "Geri yükleme öncesi güvenlik yedeği alınamadı, bu yüzden geri yükleme " +
+        "başlatılmadı; mevcut verileriniz olduğu gibi duruyor. " +
+        `Yedekleme klasörünün yazılabilir olduğundan emin olup tekrar deneyin. (${
+          err instanceof Error ? err.message : String(err)
+        })`,
+    );
+  }
 
   const statements: string[] = [
     ...DROP_TRIGGERS,
@@ -477,11 +614,19 @@ export const importDatabase = async (jsonString: string): Promise<ImportResult> 
       ]),
     ),
 
-    ...chunkedInsert(
-      "worker_rate_history",
-      ["worker_id", "valid_from", "daily_wage", "worker_type"],
-      data.rates.map((r) => [r.worker_id, r.valid_from, r.daily_wage, r.worker_type]),
-    ),
+    // `id` yedekte varsa korunur: `audit_logs.record_id` bu değere referans
+    // verir. Yoksa (v1-v3) kolon dışarıda bırakılır ve SQLite atar.
+    ...(data.rates.every((r) => r.id !== null)
+      ? chunkedInsert(
+          "worker_rate_history",
+          ["id", "worker_id", "valid_from", "daily_wage", "worker_type"],
+          data.rates.map((r) => [r.id, r.worker_id, r.valid_from, r.daily_wage, r.worker_type]),
+        )
+      : chunkedInsert(
+          "worker_rate_history",
+          ["worker_id", "valid_from", "daily_wage", "worker_type"],
+          data.rates.map((r) => [r.worker_id, r.valid_from, r.daily_wage, r.worker_type]),
+        )),
 
     ...chunkedInsert(
       "attendance",
@@ -510,7 +655,16 @@ export const importDatabase = async (jsonString: string): Promise<ImportResult> 
 
     ...chunkedInsert(
       "audit_logs",
-      ["id", "action_type", "entity_table", "record_id", "old_data", "new_data", "created_at"],
+      [
+        "id",
+        "action_type",
+        "entity_table",
+        "record_id",
+        "old_data",
+        "new_data",
+        "created_at",
+        "reverted_at",
+      ],
       data.audit_logs.map((l) => [
         l.id,
         l.action_type,
@@ -519,6 +673,7 @@ export const importDatabase = async (jsonString: string): Promise<ImportResult> 
         l.old_data,
         l.new_data,
         l.created_at,
+        l.reverted_at,
       ]),
     ),
 
@@ -541,7 +696,18 @@ export const importDatabase = async (jsonString: string): Promise<ImportResult> 
     )})`,
   ];
 
-  await executeTransaction(statements);
+  // Transaction ya tamamen uygulanır ya hiç uygulanmaz. Hata olursa veri eski
+  // hâlindedir; yine de kullanıcıya elle dönüş yolunu söylüyoruz.
+  try {
+    await executeTransaction(statements);
+  } catch (err: unknown) {
+    throw new BackupError(
+      `Geri yükleme uygulanamadı, verileriniz değişmedi. ` +
+        `Gerekirse geri yüklemeden hemen önce alınan güvenlik yedeğini ` +
+        `kullanabilirsiniz: ${safetyBackupPath} ` +
+        `(${err instanceof Error ? err.message : String(err)})`,
+    );
+  }
 
   return {
     safetyBackupPath,

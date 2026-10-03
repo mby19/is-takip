@@ -1,0 +1,121 @@
+name: CodeQL
+
+# GitHub'ın ücretsiz statik analizi. İki dil için çalıştırılıyor:
+#   * javascript-typescript — arayüz katmanı (DOM XSS, taint akışı, Sentry
+#     veri sızıntısı vb.)
+#   * rust — Tauri backend: dosya/veritabanı erişimi, shell komutu enjeksiyonu,
+#     `unsafe` blokları, Tauri IPC komutlarında yetki sızıntısı.
+#
+# Aynı ci.yml'de olduğu gibi action'lar commit SHA'sına pin'lenmiştir.
+# NOT: codeql-action v3 node20 kullanıyor ve GitHub bu runtime'ı 2026-09-23'te
+# kaldırdı; v3 artık çalışmıyor, bu yüzden v4 (node24) kullanılıyor.
+# `paths:` input'u v3'te vardı ama v4'te KALDIRILDI — kapsam artık repo
+# genelinde; Rust için bunun yerine `source-root` kullanılıyor.
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+  # Periyodik tarama: bağımlılık/veri-akışı zehirlenmesi gibi açıklar, kod
+  # değişmeden sonra CodeQL'in güncellenmesiyle ortaya çıkabilir. Sadece
+  # push'a bağlı kalsaydık bunları hiç görmezdik.
+  schedule:
+    # Her pazartesi 04:23 UTC. Dakika bilinçli olarak "sıfır" değil: şu an çok
+    # yaygın olan :00 çakışmasıyla Dependabot ve CodeQL işleri aynı anda
+    # başlayıp aynı anda limit'e takılıyor.
+    - cron: "23 4 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  analyze:
+    name: Analyze (${{ matrix.language }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    permissions:
+      contents: read
+      # SARIF yükleme. Fork PR'larında bu izin verilmez; CodeQL action'u
+      # yüklemeyi atlayıp uyarı verir, iş başarısız olmaz.
+      security-events: write
+      actions: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - language: javascript-typescript
+            # Yorumlanan dil: derleme yok.
+            build-mode: none
+            source-root: ''
+            needs-frontend: false
+          - language: rust
+            # Rust için CodeQL'in derleme sırasında fonksiyon/veri-akışı
+            # izlemesi şart; tracing çalışmadan boş veritabanı üretir.
+            build-mode: manual
+            source-root: src-tauri
+            needs-frontend: true
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # tauri build.rs, frontendDist (`../dist`) yoksa derlemeyi başlatmadan
+      # reddediyor. CodeQL'in Cargo'yu izleyebilmesi için dist önce üretilmeli.
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020f # v7.0.0
+        if: matrix.needs-frontend
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+        if: matrix.needs-frontend
+      - run: npm run build
+        if: matrix.needs-frontend
+
+      - uses: dtolnay/rust-toolchain@7e38f4b43b4db5c8dd498af069a4f6196df1d067 # v1
+        if: matrix.language == 'rust'
+
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        if: matrix.language == 'rust'
+        with:
+          workspaces: src-tauri
+
+      # Tauri'nin Linux derleme bağımlılıkları (webkit2gtk, WebKit bağımlı GTK
+      # uygulama kabuğu). Runner imajında hazır gelmiyor ve `setup-codeql`
+      # action'ı Aralık 2024'te kaldırıldığı için elle kuruluyor.
+      - name: Install Linux build dependencies
+        if: matrix.language == 'rust'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential \
+            curl \
+            file \
+            libwebkit2gtk-4.1-dev \
+            libxdo-dev \
+            libssl-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4.38.2
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: ${{ matrix.build-mode }}
+          source-root: ${{ matrix.source-root }}
+          # Güvenlik + sektör-spesifik güvenlik sorguları (CodeQL'in "quality"
+          # paketi değil — süreyi gereksiz uzatıyor; istenirse `security-and-quality`).
+          queries: security-extended
+
+      - name: Build (CodeQL trace)
+        if: matrix.language == 'rust'
+        working-directory: src-tauri
+        run: cargo build
+
+      - name: Perform CodeQL analysis
+        uses: github/codeql-action/analyze@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4.38.2
+        with:
+          category: /language:${{ matrix.language }}

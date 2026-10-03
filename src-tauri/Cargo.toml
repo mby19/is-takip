@@ -19,7 +19,6 @@ tauri-build = { version = "2.6", features = [] }
 
 [dependencies]
 tauri = { version = "2.11", features = [] }
-tauri-plugin-opener = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tauri-plugin-sql = { version = "2.3.2", features = ["sqlite"] }
@@ -27,4 +26,13 @@ tauri-plugin-fs = "2"
 tauri-plugin-dialog = "2"
 tauri-plugin-notification = "2"
 tauri-plugin-deep-link = "2.4.10"
+
+[profile.release]
+# macOS 27'in `ld` + Rust'in varsayılan `strip = "debuginfo"` birleşimi
+# LINKEDIT'i bozuyor: üretilen proc-macro dylib'i `dlopen` edilemiyor
+# ("mis-aligned LINKEDIT string pool", rust-lang/rust#157750). Sonuç olarak
+# `sqlx_macros` yüklenemiyor ve release derlemesi iOS'ta da, masaüstünde de
+# E0432 ile düşüyor. Sembolleri strip etmeden bırakmak bu hatanın işe yaramaz
+# bir sonucu oluyor; simgeleri Rust tarafında ayrıca kullanmıyoruz.
+strip = "none"
 

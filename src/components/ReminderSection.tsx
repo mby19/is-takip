@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Bell, BellOff } from "lucide-react";
-import { useReminderStore } from "../stores/reminderStore";
-import { ensureNotificationPermission, resetReminderSync } from "../lib/reminder";
+import { useReminderStore, INVALID_TIME_MESSAGE } from "../stores/reminderStore";
+import { ensureNotificationPermission, resetReminderSync, syncReminders } from "../lib/reminder";
 import { useToastStore } from "../stores/toastStore";
 
 /**
@@ -39,15 +39,35 @@ export function ReminderSection() {
       }
       resetReminderSync();
       setEnabled(true);
+      // Başarı bildirimi yalnızca kurulum GERÇEKTEN denendiğinde atılır.
+      // `syncReminders` sessizce başarısız olabiliyor (izin reddedilmiş ya da
+      // beklenmedik hata); bu durumlarda "kuruldu" demek yanlış olurdu.
+      const result = await syncReminders();
+      if (result === "izin-yok") {
+        useToastStore
+          .getState()
+          .addToast("Bildirim izni verilmedi, hatırlatma kurulamadı.", "error");
+        return;
+      }
+      if (result === "hata") {
+        useToastStore
+          .getState()
+          .addToast("Hatırlatma kurulamadı, bir sonraki açılışta tekrar denenecek.", "error");
+        return;
+      }
       useToastStore.getState().addToast(`Her gün ${time} için hatırlatma kuruldu`, "success");
     } finally {
       setIsBusy(false);
     }
   };
 
+  /** Geçersiz saat sessizce yutulmaz: kullanıcı neden kaydedilmediğini bilir. */
   const changeTime = (value: string) => {
+    if (!setTime(value)) {
+      useToastStore.getState().addToast(INVALID_TIME_MESSAGE, "error");
+      return;
+    }
     resetReminderSync();
-    setTime(value);
   };
 
   return (

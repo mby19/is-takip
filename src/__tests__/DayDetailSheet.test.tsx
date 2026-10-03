@@ -3,11 +3,12 @@ import { render, screen, waitFor, cleanup, fireEvent, act } from "@testing-libra
 
 const executeQuery = vi.fn();
 const fetchQuery = vi.fn();
+const executeTransaction = vi.fn();
 
 vi.mock("../lib/db", () => ({
   executeQuery: (...args: unknown[]) => executeQuery(...args),
   fetchQuery: (...args: unknown[]) => fetchQuery(...args),
-  executeTransaction: vi.fn(),
+  executeTransaction: (...args: unknown[]) => executeTransaction(...args),
   getDb: vi.fn(),
   getTriggerSetupError: () => null,
 }));
@@ -15,6 +16,7 @@ vi.mock("../lib/db", () => ({
 import { DayDetailSheet } from "../components/DayDetailSheet";
 import { useWorkerStore } from "../stores/workerStore";
 import { useAttendanceStore } from "../stores/attendanceStore";
+import { usePeriodStore } from "../stores/periodStore";
 import { useMetricsStore } from "../stores/metricsStore";
 import { useToastStore } from "../stores/toastStore";
 import type { Worker } from "../types";
@@ -35,6 +37,10 @@ const DATE = "2026-05-10";
 beforeEach(() => {
   executeQuery.mockReset().mockResolvedValue({ rowsAffected: 1 });
   fetchQuery.mockReset().mockResolvedValue([]);
+  executeTransaction.mockReset().mockResolvedValue(undefined);
+
+  // Fail-closed kuralı: kilit listesi yüklenmeden yazma yolu kapalıdır.
+  usePeriodStore.setState({ closed: [], closedLoaded: true, isLoading: false, error: null });
 
   useWorkerStore.setState({ workers, rateHistory: [], isLoading: false, error: null });
   useAttendanceStore.setState({ attendances: [], isLoading: false, error: null });
@@ -48,6 +54,13 @@ afterEach(cleanup);
 const click = async (el: HTMLElement) => {
   await act(async () => {
     fireEvent.click(el);
+  });
+};
+
+/** Sayısal alanı değiştirir + bekleyen state güncellemelerinin akması. */
+const type = async (el: HTMLElement, value: string) => {
+  await act(async () => {
+    fireEvent.change(el, { target: { value } });
   });
 };
 
@@ -101,15 +114,23 @@ describe("DayDetailSheet", () => {
     const onClose = renderSheet();
 
     await click(screen.getByRole("button", { name: "Ahmet Yılmaz: Tam" }));
+    // Finansal alan da değişmeli: finansal alana dokunulmadan «Kaydet»
+    // günün ciro/gider/üretimini 0'a ezmez (bkz. handleSave yorumu).
+    await type(screen.getByLabelText(/Üretim/), "42");
     await click(screen.getByRole("button", { name: "Kaydet" }));
 
     await waitFor(() => expect(onClose).toHaveBeenCalled());
     const written = executeQuery.mock.calls.map((c) => String(c[0]));
-    expect(written.some((q) => q.includes("INTO daily_metrics"))).toBe(true);
-    expect(written.some((q) => q.includes("INTO attendance"))).toBe(true);
+    // Puantajlar tek transaction içinde, hazırlanmış SQL metni olarak gider.
+    const statements = (executeTransaction.mock.calls[0]?.[0] as string[]) ?? [];
+    const writtenSql = [...written, ...statements];
+    expect(writtenSql.some((q) => q.includes("INTO daily_metrics"))).toBe(true);
+    expect(writtenSql.some((q) => q.includes("INTO attendance"))).toBe(true);
   });
 
   it("KRİTİK: kayıt başarısız olursa pencere kapanmaz ve hata gösterilir", async () => {
+    // Puantaj yazımı transaction içinde olduğu için hata oradan gelmelidir.
+    executeTransaction.mockRejectedValue(new Error("disk dolu"));
     executeQuery.mockRejectedValue(new Error("disk dolu"));
     const onClose = renderSheet();
 
@@ -142,5 +163,65 @@ describe("DayDetailSheet", () => {
     const onClose = renderSheet();
     await click(screen.getByRole("button", { name: "İptal" }));
     expect(onClose).toHaveBeenCalled();
+  });
+
+  it("zarar gününde zararı ayrı satırda gösterir", async () => {
+    const partner: Worker = {
+      id: 2,
+      name: "Veli Ortak",
+      daily_wage: 0,
+      worker_type: "ORTAK",
+      is_active: true,
+      created_at: "2026-01-01",
+    };
+    useWorkerStore.setState({
+      workers: [workers[0], partner],
+      rateHistory: [],
+      isLoading: false,
+      error: null,
+    });
+
+    renderSheet();
+
+    await click(screen.getByRole("button", { name: "Ahmet Yılmaz: Tam" }));
+    await click(screen.getByRole("button", { name: "Veli Ortak: Tam" }));
+    // Ciro 5000, gider 0, yevmiye 600 → 4400 kâr: zarar satırı yok.
+    await type(screen.getByLabelText(/Ciro/), "5000");
+    expect(screen.queryByText(/ortak payı dağıtılmadı/i)).not.toBeInTheDocument();
+
+    // Gideri yevmiyeyi aş → zarar.
+    await type(screen.getByLabelText(/Gider/), "9000");
+    const row = screen.getByText(/ortak payı dağıtılmadı/i);
+    expect(row).toBeInTheDocument();
+    expect(row.parentElement?.className).toContain("text-bad");
+    expect(row.parentElement?.textContent).toContain("₺-4.600");
+  });
+
+  it("ortak yokken (hepsi ABSENT) oluşan kârı dağıtılmayan olarak gösterir", async () => {
+    const partner: Worker = {
+      id: 2,
+      name: "Veli Ortak",
+      daily_wage: 0,
+      worker_type: "ORTAK",
+      is_active: true,
+      created_at: "2026-01-01",
+    };
+    useWorkerStore.setState({
+      workers: [workers[0], partner],
+      rateHistory: [],
+      isLoading: false,
+      error: null,
+    });
+
+    renderSheet();
+    await click(screen.getByRole("button", { name: "Ahmet Yılmaz: Tam" }));
+    // Ortak gelmiyor → gün kârlı olsa bile dağıtılacak ortak yok.
+    await click(screen.getByRole("button", { name: "Veli Ortak: Yok" }));
+    await type(screen.getByLabelText(/Ciro/), "5000");
+
+    // Ciro 5000 − yevmiye 600 = 4400 kâr hiçbir yere yazılmıyordu.
+    const row = screen.getByText(/aktif ortak yoktu/i);
+    expect(row).toBeInTheDocument();
+    expect(row.parentElement?.textContent).toContain("₺4.400");
   });
 });

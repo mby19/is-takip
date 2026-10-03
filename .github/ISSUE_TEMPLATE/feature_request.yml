@@ -1,0 +1,74 @@
+name: Feature request
+description: Propose a capability for İş Takip. Please describe the field problem before the solution.
+title: "[Feature]: "
+labels: ["enhancement", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Features are evaluated against the domain model in `CONTEXT.md` and the
+        open decisions in `docs/karar-bekleyenler.md`. Check whether the idea is
+        already listed there before opening a new issue.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: What do you do today that is hard, error-prone or impossible? Describe the field situation, not the UI you imagine.
+      placeholder: At month end I re-key the same numbers into a spreadsheet to show the owner the profit, and it never matches the app.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: What should the app do? A sketch of the flow is enough; implementation details are not required.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+    validations:
+      required: false
+
+  - type: dropdown
+    id: scope
+    attributes:
+      label: Where does this land?
+      options:
+        - Attendance / daily entries
+        - Production and metrics
+        - Earnings and payments
+        - Reports, CSV / PDF export
+        - Backup and restore
+        - Mobile (Android / iOS)
+        - Settings, lock or security
+        - Developer experience / build
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: implications
+    attributes:
+      label: Architectural implications
+      description: |
+        Tick what applies so the triage can tell whether an ADR is needed. See
+        `docs/adr/` and `docs/karar-bekleyenler.md`.
+      options:
+        - label: This would change the money calculation (`earningsCalculator.ts` / `calculations.ts`) — ADR required.
+        - label: This would add or change a database table, column or trigger — ADR required.
+        - label: This would change which writes are audited and revertible — ADR required.
+        - label: This would change the period-lock behaviour — ADR required.
+        - label: This would cross the layer rule (component → hook → store → repository → `lib/db.ts`).
+        - label: This would change data export/backup format — a compatibility and migration plan is required.
+        - label: None of the above.
+
+  - type: textarea
+    id: alternatives-notes
+    attributes:
+      label: Anything else
+    validations:
+      required: false

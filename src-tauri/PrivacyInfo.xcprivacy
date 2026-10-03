@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+	Apple 2024'ten beri privacy manifest zorunlu tutuyor: eksik/geçersiz bir
+	manifest içeren yüklemeler App Store Connect tarafından reddediliyor
+	(ITMS-91053).
+
+	UYGULAMA NEREDE: Apple, iOS uygulamalarında bu dosyanın bundle KÖKÜNDE
+	olmasını şart koşuyor (`is-takip.app/PrivacyInfo.xcprivacy`).
+
+	KALICILIK: Tauri bu dosyayı `gen/apple/` altına otomatik koymuyor ve
+	`bundle.resources` da işe yaramıyor — o yol dosyayı `assets/` klasör
+	referansıyla bundle'ın İÇİNE, yani `is-takip.app/assets/…` altına
+	koyuyor; Apple kök istiyor. Bu yüzden kalıcı yol seçildi:
+	  1. dosya burada (`src-tauri/PrivacyInfo.xcprivacy`) — sürüm kontrolünde,
+	  2. `tauri.conf.json → bundle.iOS.template` (`apple-project.yml`)
+	     XcodeGen şablonunu ezip, bu dosyayı Copy Bundle Resources'a ekliyor.
+	`src/__tests__/iosPrivacyManifest.test.ts` ikisinin birden kaybolmasını
+	yakalıyor.
+-->
+<plist version="1.0">
+<dict>
+	<!--
+		VERİ TOPLAMA: yok. Kayıt/analitik SDK'sı kullanılmıyor; hata
+		izleme (Sentry) yalnızca `VITE_SENTRY_DSN` tanımlıysa açılıyor ve
+		o zaman da `sendDefaultPii: false` ile IP/header gönderilmiyor, tüm
+		metin maskeleniyor (`src/lib/errorMonitoring.ts`). Kullanıcıyı takip
+		eden bir tanımlayıcı (IDFA/advertising identifier) hiç okunmuyor.
+	-->
+	<key>NSPrivacyTracking</key>
+	<false/>
+	<key>NSPrivacyTrackingDomains</key>
+	<array/>
+
+	<key>NSPrivacyCollectedDataTypes</key>
+	<array/>
+
+	<!--
+		REQUIRED REASON API: uygulamanın çağırdığı ve Apple'ın gerekçe
+		istediği API'ler.
+
+		FileTimestamp — `src/lib/tauri.ts` yedekleme dosyalarını listelerken
+		`stat()` çağırıyor (`@tauri-apps/plugin-fs`), bu da dosya zaman
+		dampgalarını okuyabilen bir API. Gerekçe C617.1: yalnızca uygulamanın
+		kendi konteyneri içindeki dosyaların üst verisi. iOS'ta
+		`BaseDirectory.Download` uygulama konteyneri içindedir, dışarıdan
+		erişilen bir dosya değildir.
+
+		UserDefaults — WebView katmanı (WKWebView/wry) ayar deposunu okur.
+		Gerekçe CA92.1: yalnızca uygulamanın kendi sakladığı, kendine özgü
+		veriler.
+	-->
+	<key>NSPrivacyAccessedAPITypes</key>
+	<array>
+		<dict>
+			<key>NSPrivacyAccessedAPIType</key>
+			<string>NSPrivacyAccessedAPICategoryFileTimestamp</string>
+			<key>NSPrivacyAccessedAPITypeReasons</key>
+			<array>
+				<string>C617.1</string>
+			</array>
+		</dict>
+		<dict>
+			<key>NSPrivacyAccessedAPIType</key>
+			<string>NSPrivacyAccessedAPICategoryUserDefaults</string>
+			<key>NSPrivacyAccessedAPITypeReasons</key>
+			<array>
+				<string>CA92.1</string>
+			</array>
+		</dict>
+	</array>
+</dict>
+</plist>

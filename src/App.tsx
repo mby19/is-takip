@@ -5,20 +5,28 @@ import { DayDetailSheet } from "./components/DayDetailSheet";
 import { AppLockOverlay } from "./components/AppLockOverlay";
 import { ToastContainer } from "./components/ToastContainer";
 import { ErrorBoundary } from "./components/ErrorBoundary";
-import { OfflineIndicator } from "./components/OfflineIndicator";
+import { ModalStackProvider, useGlobalBack, useModalStack } from "./components/modal-stack";
 import { getDb } from "./lib/db";
 import { isLockEnabled } from "./lib/appLock";
 import { reportError } from "./lib/errorMonitoring";
-import { pruneAuditLogs } from "./lib/retention";
 import { todayKey } from "./lib/period";
 import { useReminders } from "./hooks/useReminders";
+import { importDatabase } from "./lib/backup";
 import { Button } from "./components/ui/button";
 import { useWorkerStore } from "./stores/workerStore";
 import { usePeriodStore } from "./stores/periodStore";
-import { useThemeStore } from "./stores/themeStore";
 import { useToastStore } from "./stores/toastStore";
-import { Users, CalendarDays, Settings, ClipboardList, Scale } from "lucide-react";
+import {
+  Users,
+  CalendarDays,
+  Settings,
+  ClipboardList,
+  Scale,
+  DatabaseBackup,
+  Loader2,
+} from "lucide-react";
 import type { Worker } from "./types";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 
 // Ağır ekranlar yalnızca açıldıklarında yüklenir — açılış süresi ve paket boyutu düşer.
 const WorkerDetailView = lazy(() =>
@@ -40,7 +48,7 @@ const LoadingSpinner = () => (
   </div>
 );
 
-function App() {
+function AppShell() {
   type Screen =
     | { kind: "calendar" }
     | { kind: "workers" }
@@ -72,10 +80,27 @@ function App() {
         exitTimerRef.current = undefined;
         void (async () => {
           try {
-            const { getCurrentWindow } = await import("@tauri-apps/api/window");
             await getCurrentWindow().close();
-          } catch {
-            window.close();
+            // Pencere kapanmadıysa buraya düşülmez; `close()` çözülür.
+          } catch (error) {
+            // Tauri yedeği: webview'da `window.close()` çoğunlukla etkisizdir.
+            try {
+              window.close();
+            } catch {
+              /* aşağıdaki kullanıcı bildirimi bu yolun da tutmadığını söyler */
+            }
+            reportError(error instanceof Error ? error : new Error(String(error)), {
+              scope: "close-window",
+            });
+            // Sessizce vazgeçmek kullanıcıya "çıkış çalışmıyor ama neden?" diye
+            // soru bırakır ve her seferinde yeniden denemesini gerektirir.
+            // Kapanma gerçekleşirse bu bildirim zaten görünmez.
+            useToastStore
+              .getState()
+              .addToast(
+                "Uygulama kapatılamadı. Sistem menüsünden veya Alt+F4 ile kapatmayı deneyin.",
+                "error",
+              );
           }
         })();
         return prev;
@@ -89,6 +114,8 @@ function App() {
     });
   }, []);
 
+  const { hasOpenModal } = useModalStack();
+
   const switchTab = useCallback((kind: "calendar" | "workers" | "summary" | "settings") => {
     setNavStack([{ kind }]);
   }, []);
@@ -97,41 +124,54 @@ function App() {
     setNavStack((prev) => [...prev, screen]);
   }, []);
 
-  // Global geri hareketi: Escape + popstate (dokunmatik/kaydırma jesti)
+  /**
+   * Tek geri davranışı. Hem Escape (`useGlobalBack`) hem `popstate` BUNU
+   * çağırır; iki ayrı öncelik sırası yüzünden "hangi kaynak önce geliyor"
+   * belirsizliği yaşanmasın.
+   *
+   * Kilitliyken HİÇBİR geri yolu ekran yığınını değiştirmez. Escape için
+   * `useGlobalBack(handleBack, !isUnlocked)` zaten ayrı bir karar veriyor, ama
+   * `popstate` o bayrağı görmez ve doğrudan buraya gelir — guard olmadan
+   * tarayıcı önizlemesinde kilit ekranı açıkken bile ekran değiştirilir,
+   * kökte çıkış sayacı tetiklenir. Modal sayacı da buna yetmez: kilit ekranı
+   * modal olduğu için Escape'i zaten yutuyor, `popstate`'in önünde durmaz.
+   *
+   * Modal açıkken geri çalışmaz: modal kendi Escape'ini kendi yönetir ve
+   * uygulama ekranından da çıkılmaz (bkz. `useGlobalBack`).
+   * `selectedDate` guard'ı bilinçli korunuyor — tarih seçiliyse önce o kapanır.
+   *
+   * KARAR (AS2): `popstate` Tauri WebView'da güvenilir biçimde tetiklenmez ve
+   * masaüstü hedefinde mobil geri tuşu yok. Bu yüzden `popstate` YALNIZCA
+   * tarayıcı önizlemesinde (`npm run dev`) işe yarayan bir yedek yoldur;
+   * masaüstünde geri yolu Escape'tir. Mobil hedef eklenirse bu karar
+   * yeniden değerlendirilmelidir.
+   */
+  const handleBack = useCallback(() => {
+    // Kilit ekranı açıkken ekran yığınına ve çıkış sayacına dokunulmaz.
+    if (!isUnlocked) return;
+    // Tarayıcıda modal açıkken geri tuşu da ekrandan çıkarmamalı; Escape ile
+    // aynı karar burada da geçerli olsun diye modal sayacı okunur.
+    if (hasOpenModal) return;
+    if (selectedDate) {
+      setSelectedDate(null);
+      return;
+    }
+    goBack();
+  }, [isUnlocked, hasOpenModal, selectedDate, goBack]);
+
+  useGlobalBack(handleBack, !isUnlocked);
+
   useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        if (selectedDate) return; // dialog kendi Escape'ini yönetiyor
-        e.preventDefault();
-        goBack();
-      }
-    };
     const handlePopState = () => {
+      // Tarayıcıda her geri basışında bir geçmiş girdisi tüketilmesin diye
+      // durumu yeniden sabitliyoruz.
       window.history.pushState(null, "", window.location.href);
-      if (selectedDate) {
-        setSelectedDate(null);
-        return;
-      }
-      goBack();
+      handleBack();
     };
     window.history.pushState(null, "", window.location.href);
-
-    window.addEventListener("keydown", handleKeyDown);
     window.addEventListener("popstate", handlePopState);
-    return () => {
-      window.removeEventListener("keydown", handleKeyDown);
-      window.removeEventListener("popstate", handlePopState);
-    };
-  }, [selectedDate, goBack]);
-
-  const themeMode = useThemeStore((s) => s.mode);
-  const themePalette = useThemeStore((s) => s.palette);
-
-  useEffect(() => {
-    const root = document.documentElement;
-    root.classList.toggle("dark", themeMode === "dark");
-    root.setAttribute("data-palette", themePalette);
-  }, [themeMode, themePalette]);
+    return () => window.removeEventListener("popstate", handlePopState);
+  }, [handleBack]);
 
   useReminders({ ready: dbReady, onOpenToday: () => setSelectedDate(todayKey()) });
 
@@ -163,9 +203,6 @@ function App() {
         await fetchRateHistory();
         await fetchClosedPeriods();
         setDbReady(true);
-
-        // Bakım işi — açılışı bloklamaz.
-        void pruneAuditLogs();
       } catch (err: unknown) {
         if (!isMounted) return;
         const message = err instanceof Error ? err.message : String(err);
@@ -181,29 +218,12 @@ function App() {
   }, [fetchWorkers, fetchRateHistory, fetchClosedPeriods]);
 
   if (dbError) {
-    return (
-      <div className="flex flex-col items-center justify-center h-screen w-screen bg-background p-6 text-center">
-        <div className="w-20 h-20 rounded-sheet bg-rose-100 dark:bg-rose-500/20 flex items-center justify-center mb-6 animate-gentle-bounce">
-          <span className="text-4xl">⚠️</span>
-        </div>
-        <div className="text-bad font-semibold text-xl mb-2">Veritabanına Bağlanılamadı</div>
-        <div className="text-muted-foreground font-medium mb-8 max-w-xs text-sm leading-relaxed break-words">
-          {dbError}
-        </div>
-        <Button
-          onClick={() => window.location.reload()}
-          variant="default"
-          className="rounded-card h-14 font-semibold w-full max-w-xs shadow-lg shadow-primary/20"
-        >
-          Yeniden Dene
-        </Button>
-      </div>
-    );
+    return <DbErrorScreen message={dbError} />;
   }
 
   if (!dbReady) {
     return (
-      <div className="flex flex-col items-center justify-center h-screen w-screen bg-background gap-6">
+      <div className="flex flex-col items-center justify-center h-dvh w-screen bg-background gap-6">
         <div className="w-16 h-16 rounded-card bg-primary/10 flex items-center justify-center animate-float">
           <ClipboardList className="w-8 h-8 text-primary" />
         </div>
@@ -220,123 +240,267 @@ function App() {
 
   return (
     <>
-      <OfflineIndicator />
-      <main className="h-screen w-screen bg-background text-foreground flex flex-col items-center overflow-hidden selection:bg-primary/20">
+      {/*
+        "İçeriğe atla": klavyeyle gelen kullanıcının alt gezinme ve ekran
+        başlığı bloklarını Tab'layarak geçmesini sağlar. DOM'da `main`'den
+        ÖNCE gelir, bu yüzden ilk Tab durağıdır. `sr-only` ile görünmez,
+        odaklanınca `not-sr-only` ile görünür olur.
+      */}
+      <a
+        href="#main-content"
+        className="sr-only focus:not-sr-only focus:fixed focus:top-3 focus:left-1/2 focus:-translate-x-1/2 focus:z-10000 focus:rounded-control focus:bg-card focus:px-4 focus:py-2 focus:text-sm focus:font-semibold focus:text-foreground focus:shadow-lg"
+      >
+        İçeriğe atla
+      </a>
+      <main
+        id="main-content"
+        tabIndex={-1}
+        className="h-dvh w-screen bg-background text-foreground flex flex-col items-center overflow-hidden selection:bg-primary/20"
+      >
         {!isUnlocked && <AppLockOverlay onUnlock={() => setIsUnlocked(true)} />}
-        <div
-          className="w-full max-w-md bg-background h-screen relative flex flex-col overflow-hidden"
-          aria-hidden={!isUnlocked}
-          inert={!isUnlocked ? true : undefined}
-        >
-          <ErrorBoundary>
-            <Suspense fallback={<LoadingSpinner />}>
-              <div className="flex-1 flex flex-col overflow-hidden">
-                {(() => {
-                  const screen = currentScreen;
-                  switch (screen.kind) {
-                    case "worker-detail":
-                      return (
-                        <div
-                          key="worker-detail"
-                          className="flex-1 flex flex-col overflow-hidden animate-screen-enter"
-                        >
-                          <WorkerDetailView worker={screen.worker} onBack={goBack} />
-                        </div>
-                      );
-                    case "logs":
-                      return (
-                        <div
-                          key="logs"
-                          className="flex-1 flex flex-col overflow-hidden animate-screen-enter"
-                        >
-                          <AuditLogView onBack={goBack} />
-                        </div>
-                      );
-                    case "settings":
-                      return (
-                        <div
-                          key="settings"
-                          className="flex-1 flex flex-col overflow-hidden animate-screen-enter"
-                        >
-                          <SettingsView
-                            onBack={goBack}
-                            onNavigateLogs={() => navigateTo({ kind: "logs" })}
-                          />
-                        </div>
-                      );
-                    case "summary":
-                      return (
-                        <MonthSummaryScreen
-                          key="summary"
-                          onWorkerClick={(w) => navigateTo({ kind: "worker-detail", worker: w })}
-                        />
-                      );
-                    case "workers":
-                      return (
-                        <WorkersScreen
-                          key="workers"
-                          onWorkerClick={(w) => navigateTo({ kind: "worker-detail", worker: w })}
-                        />
-                      );
-                    default:
-                      return (
-                        <CalendarScreen
-                          key="calendar"
-                          onDayClick={(date) => setSelectedDate(date)}
-                          onWorkerClick={(worker) => navigateTo({ kind: "worker-detail", worker })}
-                        />
-                      );
-                  }
-                })()}
-              </div>
-            </Suspense>
-          </ErrorBoundary>
-
-          {isRootScreen && (
-            <nav
-              className="fixed bottom-0 w-full max-w-md bg-card/90 backdrop-blur-md border-t px-4 pb-safe-nav pt-2 flex justify-around items-center z-50"
-              role="navigation"
-              aria-label="Ana menü"
+        {/* Kilitliyken uygulama ağacı HİÇ mount edilmez. Yalnız `aria-hidden`/`inert`
+          yetmezdi: tüm çalışan, ücret ve bakiye verisi DOM'da duruyordu. */}
+        {isUnlocked && (
+          <div className="w-full max-w-md bg-background h-dvh relative flex flex-col overflow-hidden">
+            <ErrorBoundary
+              onError={(error, errorInfo) =>
+                reportError(error, {
+                  scope: "render",
+                  componentStack: errorInfo.componentStack ?? null,
+                })
+              }
             >
-              {[
-                { id: "calendar" as const, icon: CalendarDays, label: "Takvim" },
-                { id: "workers" as const, icon: Users, label: "Kişiler" },
-                { id: "summary" as const, icon: Scale, label: "Ay Sonu" },
-                { id: "settings" as const, icon: Settings, label: "Ayarlar" },
-              ].map((item) => {
-                const isActive = currentScreen.kind === item.id;
-                const Icon = item.icon;
-                return (
-                  <button
-                    key={item.id}
-                    className={`flex flex-col items-center gap-0.5 py-2 px-3.5 rounded-control transition-all active:scale-90 ${isActive ? "text-primary" : "text-muted-foreground"}`}
-                    onClick={() => switchTab(item.id)}
-                    aria-label={item.label}
-                    aria-current={isActive ? "page" : undefined}
-                  >
-                    <Icon className={`w-5 h-5 ${isActive ? "" : "opacity-60"}`} />
-                    <span
-                      className={`text-[10px] font-bold  ${isActive ? "opacity-100" : "opacity-60"}`}
+              <Suspense fallback={<LoadingSpinner />}>
+                <div className="flex-1 flex flex-col overflow-hidden">
+                  {(() => {
+                    const screen = currentScreen;
+                    switch (screen.kind) {
+                      case "worker-detail":
+                        return (
+                          <div
+                            key="worker-detail"
+                            className="flex-1 flex flex-col overflow-hidden animate-screen-enter"
+                          >
+                            <WorkerDetailView worker={screen.worker} onBack={goBack} />
+                          </div>
+                        );
+                      case "logs":
+                        return (
+                          <div
+                            key="logs"
+                            className="flex-1 flex flex-col overflow-hidden animate-screen-enter"
+                          >
+                            <AuditLogView onBack={goBack} />
+                          </div>
+                        );
+                      case "settings":
+                        return (
+                          <div
+                            key="settings"
+                            className="flex-1 flex flex-col overflow-hidden animate-screen-enter"
+                          >
+                            <SettingsView
+                              onBack={goBack}
+                              onNavigateLogs={() => navigateTo({ kind: "logs" })}
+                            />
+                          </div>
+                        );
+                      case "summary":
+                        return (
+                          <MonthSummaryScreen
+                            key="summary"
+                            onWorkerClick={(w) => navigateTo({ kind: "worker-detail", worker: w })}
+                          />
+                        );
+                      case "workers":
+                        return (
+                          <WorkersScreen
+                            key="workers"
+                            onWorkerClick={(w) => navigateTo({ kind: "worker-detail", worker: w })}
+                          />
+                        );
+                      default:
+                        return (
+                          <CalendarScreen
+                            key="calendar"
+                            onDayClick={(date) => setSelectedDate(date)}
+                            onWorkerClick={(worker) =>
+                              navigateTo({ kind: "worker-detail", worker })
+                            }
+                            onGoToWorkers={() => switchTab("workers")}
+                          />
+                        );
+                    }
+                  })()}
+                </div>
+              </Suspense>
+            </ErrorBoundary>
+
+            {isRootScreen && (
+              <nav
+                className="fixed bottom-0 w-full max-w-md bg-card/90 backdrop-blur-md border-t px-4 pb-safe-nav pt-2 flex justify-around items-center z-50"
+                role="navigation"
+                aria-label="Ana menü"
+              >
+                {[
+                  { id: "calendar" as const, icon: CalendarDays, label: "Takvim" },
+                  { id: "workers" as const, icon: Users, label: "Kişiler" },
+                  { id: "summary" as const, icon: Scale, label: "Ay Sonu" },
+                  { id: "settings" as const, icon: Settings, label: "Ayarlar" },
+                ].map((item) => {
+                  const isActive = currentScreen.kind === item.id;
+                  const Icon = item.icon;
+                  return (
+                    <button
+                      key={item.id}
+                      className={`tap-target flex flex-col items-center justify-center gap-0.5 py-2 px-3.5 rounded-control transition-all active:scale-90 ${isActive ? "text-primary" : "text-muted-foreground"}`}
+                      onClick={() => switchTab(item.id)}
+                      aria-label={item.label}
+                      aria-current={isActive ? "page" : undefined}
                     >
-                      {item.label}
-                    </span>
-                    {isActive && <div className="w-4 h-0.5 rounded-full bg-primary mt-0.5" />}
-                  </button>
-                );
-              })}
-            </nav>
-          )}
+                      <Icon className={`w-5 h-5 ${isActive ? "" : "opacity-60"}`} />
+                      <span
+                        className={`text-[10px] font-bold  ${isActive ? "opacity-100" : "opacity-60"}`}
+                      >
+                        {item.label}
+                      </span>
+                      {isActive && <div className="w-4 h-0.5 rounded-full bg-primary mt-0.5" />}
+                    </button>
+                  );
+                })}
+              </nav>
+            )}
 
-          <DayDetailSheet
-            isOpen={!!selectedDate}
-            dateStr={selectedDate}
-            onClose={() => setSelectedDate(null)}
-          />
+            <DayDetailSheet
+              isOpen={!!selectedDate}
+              dateStr={selectedDate}
+              onClose={() => setSelectedDate(null)}
+            />
 
-          <ToastContainer />
-        </div>
+            <ToastContainer />
+          </div>
+        )}
       </main>
     </>
+  );
+}
+
+/**
+ * Veritabanı açılamadığında gösterilen ekran.
+ *
+ * "Yeniden Dene" tek başına bırakılırsa kalıcı bir hatada kullanıcı sonsuz
+ * döngüde kalır ve verisine HİÇBİR yoldan ulaşamaz — ayarlar ekranı hiç
+ * açılmadığı için yedek de alınamaz. Bu yüzden ekran iki çıkış yolu sunar:
+ * yeniden deneme ve yedekten geri yükleme.
+ *
+ * Geri yükleme `importDatabase` üzerinden çalışır; SQL bağlantısı kurulabilen
+ * durumlarda (hatanın şema/sorgu tarafı olduğu) sorunu doğrudan çözer.
+ * Bağlantının hiç açılamadığı durumda hata mesajı ekranda kalır — en azından
+ * kullanıcı ne yapması gerektiğini görür.
+ */
+function DbErrorScreen({ message }: { message: string }) {
+  const [reloadCount, setReloadCount] = useState(0);
+  const [restoring, setRestoring] = useState(false);
+  const [restoreError, setRestoreError] = useState<string | null>(null);
+
+  // Üç denemeden sonra "yeniden dene" bir çözüm değil; kullanıcıyı kalıcı
+  // hataya ve kurtarma yoluna yönlendir.
+  const reloadDisabled = reloadCount >= 3;
+
+  const restoreFromFile = async (file: File) => {
+    setRestoring(true);
+    setRestoreError(null);
+    try {
+      const content = await file.text();
+      await importDatabase(content);
+      window.location.reload();
+    } catch (err: unknown) {
+      setRestoreError(err instanceof Error ? err.message : String(err));
+      setRestoring(false);
+    }
+  };
+
+  return (
+    <div className="flex flex-col items-center justify-center h-dvh w-screen bg-background p-6 text-center overflow-y-auto">
+      <div className="w-20 h-20 rounded-sheet bg-rose-100 dark:bg-rose-500/20 flex items-center justify-center mb-6">
+        <DatabaseBackup className="w-9 h-9 text-bad" />
+      </div>
+      <div className="text-bad font-semibold text-xl mb-2">Veritabanı Açılamadı</div>
+      <div className="text-muted-foreground font-medium mb-6 max-w-xs text-sm leading-relaxed break-words">
+        {message}
+      </div>
+
+      {restoreError && (
+        <div className="w-full max-w-xs rounded-card bg-bad-soft border border-rose-100 dark:border-rose-500/20 text-bad text-xs font-medium p-3 mb-4 break-words text-left">
+          Geri yükleme başarısız: {restoreError}
+        </div>
+      )}
+
+      <div className="w-full max-w-xs space-y-3">
+        <Button
+          onClick={() => {
+            setReloadCount((c) => c + 1);
+            window.location.reload();
+          }}
+          disabled={reloadDisabled || restoring}
+          className="rounded-card h-14 font-semibold w-full shadow-lg shadow-primary/20"
+        >
+          {reloadDisabled ? "Yeniden Deneme Kullanılamıyor" : "Yeniden Dene"}
+        </Button>
+
+        {reloadDisabled && (
+          <p className="text-muted-foreground text-xs leading-relaxed">
+            Hata üç denemeden sonra da sürüyor. Verileriniz bu cihazda duruyor; aşağıdan yedek
+            dosyasıyla geri yükleyebilirsiniz.
+          </p>
+        )}
+
+        <label
+          className={`flex items-center justify-center gap-2 rounded-card border-2 border-dashed border-border h-14 font-semibold text-sm transition-all ${
+            restoring ? "opacity-50" : "hover:border-primary/40 hover:text-primary"
+          } ${reloadDisabled ? "text-foreground" : "text-muted-foreground"}`}
+        >
+          {restoring ? (
+            <>
+              <Loader2 className="w-5 h-5 animate-spin" />
+              Geri Yükleniyor...
+            </>
+          ) : (
+            <>
+              <DatabaseBackup className="w-5 h-5" />
+              Yedekten Geri Yükle
+            </>
+          )}
+          <input
+            type="file"
+            accept="application/json,.json"
+            className="sr-only"
+            disabled={restoring}
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              e.target.value = "";
+              if (file) void restoreFromFile(file);
+            }}
+          />
+        </label>
+
+        <p className="text-muted-foreground/70 text-[11px] leading-relaxed">
+          Yedekler "İndirilenler" klasöründe, is_takip_backup_*.json adıyla durur.
+        </p>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Modal sayacı uygulama kökünde kurulur: Escape'in ekrandan çıkmasını
+ * engellemek bütün ekranların ortak kararı, tek bir bileşenin değil.
+ */
+function App() {
+  return (
+    <ModalStackProvider>
+      <AppShell />
+    </ModalStackProvider>
   );
 }
 

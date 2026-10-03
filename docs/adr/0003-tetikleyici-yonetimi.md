@@ -1,12 +1,7 @@
-# ADR 0003: Tetikleyici (Trigger) Yönetimi
+# ADR-0003: Tetikleyici (Trigger) Yönetimi
 
-## Tarih
-
-2026-06-24
-
-## Statü
-
-Kabul Edildi
+**Tarih:** 2026-06-24
+**Statü:** Kabul Edildi — kısmen aşıldı (bkz. Güncelleme, 2026-10-01)
 
 ## Bağlam
 
@@ -66,3 +61,33 @@ yutulmaz; `getTriggerSetupError()` ile Ayarlar ekranında görünür uyarı çı
 
 Trigger içerikleri de pipe-delimited metinden `json_object()` JSON'a geçti —
 gerekçe ve geriye dönük uyumluluk için bkz. ADR-0004.
+
+---
+
+## Güncelleme (2026-10-01) — Şema onarım katmanının eklenmesi
+
+ADR'lar değiştirilmez; yalnızca not düşülür.
+
+- **"Rust migration'ları sadece tablo şeması, index'ler ve CHECK
+  constraint'lerini yönetir"** ifadesi artım tek başına doğru değildir.
+  **`src/lib/schemaGuard.ts`** adlı bir JS onarım katmanı açılışta
+  çalışır ve eksik şema parçalarını tamamlar.
+
+  Gerekçe: Rust migration'ları bazı cihazlarda uygulanmamış olabiliyor
+  (yarıda kalan bir migration, sonrakilerin tamamını durdurur). Belirti
+  kullanıcıya "no such table" gibi anlaşılmaz hatalar olarak yansıyordu.
+  Her kontrol **idempotent**'tir ve tek tek çalışır; biri başarısız olursa
+  diğerleri denenmeye devam eder, sonuç `getSchemaReport()` ile Ayarlar
+  ekranında gösterilir.
+
+  Dikkat: `ALTER TABLE … RENAME TO` veritabanındaki tüm tetikleyicileri
+  yeniden ayrıştırdığı için tablo yeniden kurulumu **önce tüm
+  tetikleyicileri düşürür** ve tek transaction içinde çalışır.
+
+- **Denetim kapsamı genişledi:** 15 trigger (`TRIGGER_SCHEMA_VERSION = 3`).
+  `worker_rate_history` de kapsama girdi. Bkz. [ADR-0002](0002-ikili-denetim-sistemi.md).
+
+ADR'in kararı — **tetikleyiciler tek kaynaktan, `src/schema/triggers.ts`
+dosyasından yönetilir** — geçerlidir ve aşılmayan çekirdektir. `schemaGuard`
+katmanı aynı gerekçeyi (JS tarafı daha esnek, boot'ta doğrulanır) tablo ve
+index tarafına taşır; tetikleyicilerin tek kaynağı olma ilkesini bozmaz.

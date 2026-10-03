@@ -168,10 +168,13 @@ describe("ortak payı", () => {
     expect(result.individualEarnings[2]).toBe(3500);
   });
 
-  it("zarar da ortaklara paylaştırılır", () => {
+  it("zararda ortak payı dağıtılmaz, zarar işletmede kalır", () => {
     const result = calculateDailyEarnings([worker, partner], { 1: "FULL", 2: "FULL" }, 100, 0);
     expect(result.netProfit).toBe(-900);
-    expect(result.individualEarnings[2]).toBe(-900);
+    expect(result.undistributed).toBe(-900);
+    expect(result.individualEarnings[2]).toBe(0);
+    // Yevmiye korunur — zarar günlükçüyü etkilemez.
+    expect(result.individualEarnings[1]).toBe(1000);
   });
 
   it("aylık dökümde de aynı sonucu verir", () => {

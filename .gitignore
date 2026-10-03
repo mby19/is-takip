@@ -30,3 +30,36 @@ ts_errors.txt
 .warden/
 .omo/
 .claude/
+
+# Agent / local planning artifacts (never tracked)
+.learning/
+.scratch/
+
+# Generated backup export samples
+sample-backup.json
+
+# Ortam değişkenleri — `.env.example` takipte kalır (şablon), gerçek
+# değerler ASLA. `.env.example` kopyalanıp içine Sentry DSN yazılır
+# (bkz. `.env.example` içindeki kurulum adımları); bu dosya commit edilirse
+# ingest adresi ve gönderim kotası açığa çıkar.
+.env
+.env.local
+.env.*.local
+
+# İmzalama anahtarları — asla commit edilmez
+*.keystore
+*.jks
+*.p12
+*.mobileprovision
+*.cer
+
+# Tauri `src-tauri/gen/` altındaki Android projesi SİSTEMDE takip edilir
+# (elle eklenmiş `allowBackup=false` ayarı burada yaşar ve
+# `androidBackup.test.ts` bunu korur). Sadece derleme çıktıları ignore edilir:
+src-tauri/gen/*/build/
+src-tauri/gen/*/.gradle/
+src-tauri/gen/*/captures/
+src-tauri/gen/*/.externalNativeBuild/
+src-tauri/gen/*/.cxx/
+src-tauri/gen/*/local.properties
+src-tauri/gen/*/key.properties

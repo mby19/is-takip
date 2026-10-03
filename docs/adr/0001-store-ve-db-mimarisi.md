@@ -1,7 +1,7 @@
 # ADR-0001: Store ve Veritabanı Mimarisi
 
 **Tarih:** 2026-06-21
-**Durum:** Kabul Edildi
+**Statü:** Kabul Edildi — kısmen aşıldı (bkz. Güncelleme, 2026-10-01)
 
 ## Bağlam
 
@@ -51,3 +51,27 @@ Component → Hook → Store (state) → Repository (CRUD) → lib/db.ts
 - AuditLog revert mantığı Strategy pattern ile `src/stores/revertStrategies.ts`'e ayrıştırılmıştır.
 
 Bu değişiklikle store'lar artık state + orchestration sorumluluğu taşırken, veri erişimi tamamen repository'lere devredilmiştir.
+
+---
+
+## Güncelleme (2026-10-01) — "Sonuçlar" maddelerinin aşılması
+
+ADR'lar değiştirilmez; yalnızca not düşülür. Aşağıdaki maddeler artık
+geçerli değildir.
+
+- **"Migration yönetimi yoktur; şema değişiklikleri uygulama kodu ile yapılır."**
+  → **Aşıldı.** Rust tarafında 13 migration vardır (`src-tauri/src/db.rs`,
+  sürüm 1–13), `src-tauri/src/lib.rs` içinde `sqlite:is_takip_v3.db` için
+  kayıt altına alınır. Tablo şeması, index'ler ve CHECK constraint'ler
+  migration'larla yönetilir.
+- **Açılışta idempotent onarım:** `src/lib/schemaGuard.ts` yarıda kalan bir
+  migration'ın neden olduğu "no such table" hatalarını açılışta tamamlar.
+  Yani şema iki katmanlı yönetilir: migration + JS onarımı.
+- **"Testlerde veritabanı mock'lamak gerekir (`fetchQuery` mock'lanmıştır)."**
+  → **Aşıldı.** Birim testleri gerçek `node:sqlite` üzerinde çalışır;
+  `fetchQuery` mock'lanmaz. Bkz. [ADR-0007](0007-e2e-test-kosumu.md).
+- **`fetchQuery` / `executeQuery` çifti tek kanal değildir:** `executeTransaction`
+  eklendi (çok ifadeli atomik yazma). Bkz. [ADR-0004](0004-atomik-yazma-ve-yedek-uyumlulugu.md).
+
+Kararın kendisi (Zustand + ham SQLite, repository katmanı) geçerlidir ve
+korunuyor.

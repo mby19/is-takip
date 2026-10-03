@@ -1,28 +1,83 @@
-import { useState, useEffect } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "./ui/dialog";
 import { Button } from "./ui/button";
 import { useWorkerStore } from "../stores/workerStore";
 import { Dices, PartyPopper, Check, RotateCw } from "lucide-react";
 
+/** Çarkın dönme süresi — CSS transition ile aynı olmalı, aksi halde kazanan
+ *  animasyon bitmeden görünür ve hesap ile göstergesi ayrışır. */
+const SPIN_MS = 4000;
+
+const COLORS = [
+  "#f43f5e", // rose
+  "#3b82f6", // blue
+  "#10b981", // emerald
+  "#f59e0b", // amber
+  "#8b5cf6", // violet
+  "#ec4899", // pink
+  "#14b8a6", // teal
+  "#f97316", // orange
+  "#64748b", // slate
+  "#84cc16", // lime
+];
+
 export function SpinWheelDialog() {
-  const { workers } = useWorkerStore();
+  const workers = useWorkerStore((s) => s.workers);
+  const [open, setOpen] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [isSpinning, setIsSpinning] = useState(false);
+
   const [winner, setWinner] = useState<string | null>(null);
   const [rotation, setRotation] = useState(0);
 
-  // Modal ilk açıldığında aktif çalışanları seçili hale getir
-  useEffect(() => {
-    setSelectedIds(new Set(workers.filter((w) => w.is_active).map((w) => w.id)));
-  }, [workers]);
+  // Bileşen kapanırken çalışan zamanlayıcı hem state güncellemesi yapar hem
+  // de kazananı gösterirdi — bellek sızıntısı ve açık uygulamada görünen
+  // "kazanan" kutusu. Unmount'ta temizlenir.
+  const spinTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
-  const activeWorkers = workers.filter((w) => selectedIds.has(w.id));
+  useEffect(() => {
+    return () => clearTimeout(spinTimerRef.current);
+  }, []);
+
+  const activeWorkers = useMemo(
+    () => workers.filter((w) => selectedIds.has(w.id)),
+    [workers, selectedIds],
+  );
+
+  /**
+   * Katılımcı listesi dialog HER AÇILDIĞINDA aktif çalışanlarla tazelenir.
+   * `workers` değişimine bağlı bir effect kullanmıyordu: kullanıcı seçimini
+   * yapıp bir işlem yaptığında (ör. bir kişi arşivlendiğinde liste yeniden
+   * geldiği için) seçim sessizce sıfırlanıyordu.
+   */
+  const handleOpenChange = useCallback(
+    (isOpen: boolean) => {
+      setOpen(isOpen);
+      if (!isOpen) {
+        if (spinTimerRef.current !== undefined) {
+          clearTimeout(spinTimerRef.current);
+          spinTimerRef.current = undefined;
+        }
+        // Kapalıyken isSpinning true kalırsa bir sonrı açılışta ÇEVİR
+        // butonu kalıcı olarak kilitli başlardı.
+        setIsSpinning(false);
+        setWinner(null);
+        setRotation(0);
+        return;
+      }
+      setSelectedIds(new Set(workers.filter((w) => w.is_active).map((w) => w.id)));
+    },
+    [workers],
+  );
 
   const toggleWorker = (id: number) => {
-    const newSet = new Set(selectedIds);
-    if (newSet.has(id)) newSet.delete(id);
-    else newSet.add(id);
-    setSelectedIds(newSet);
+    if (isSpinning) return;
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
   };
 
   const spin = () => {
@@ -43,64 +98,49 @@ export function SpinWheelDialog() {
     let rotationToAdd = targetModulo - currentModulo;
     if (rotationToAdd < 0) rotationToAdd += 360;
 
-    const newRotation = rotation + extraSpins + rotationToAdd;
+    setRotation(rotation + extraSpins + rotationToAdd);
 
-    setRotation(newRotation);
-
-    setTimeout(() => {
-      setWinner(activeWorkers[winnerIndex].name);
+    if (spinTimerRef.current !== undefined) clearTimeout(spinTimerRef.current);
+    spinTimerRef.current = setTimeout(() => {
+      spinTimerRef.current = undefined;
       setIsSpinning(false);
-    }, 4000); // 4 saniyelik CSS transition
+      setWinner(activeWorkers[winnerIndex].name);
+    }, SPIN_MS);
   };
 
-  const colors = [
-    "#f43f5e", // rose
-    "#3b82f6", // blue
-    "#10b981", // emerald
-    "#f59e0b", // amber
-    "#8b5cf6", // violet
-    "#ec4899", // pink
-    "#14b8a6", // teal
-    "#f97316", // orange
-    "#64748b", // slate
-    "#84cc16", // lime
-  ];
-
-  const getConicGradient = () => {
+  const gradient = useMemo(() => {
     if (activeWorkers.length === 0) return "conic-gradient(#e2e8f0 0% 100%)";
-    if (activeWorkers.length === 1) return `conic-gradient(${colors[0]} 0% 100%)`;
+    if (activeWorkers.length === 1) return `conic-gradient(${COLORS[0]} 0% 100%)`;
 
     const slicePercentage = 100 / activeWorkers.length;
-    let gradient = "";
-    activeWorkers.forEach((_, i) => {
-      const color = colors[i % colors.length];
-      gradient += `${color} ${i * slicePercentage}% ${(i + 1) * slicePercentage}%, `;
-    });
-    return `conic-gradient(${gradient.slice(0, -2)})`;
-  };
+    const stops = activeWorkers
+      .map(
+        (_, i) =>
+          `${COLORS[i % COLORS.length]} ${i * slicePercentage}% ${(i + 1) * slicePercentage}%`,
+      )
+      .join(", ");
+    return `conic-gradient(${stops})`;
+  }, [activeWorkers.length]);
 
   return (
-    <Dialog
-      onOpenChange={(isOpen) => {
-        if (isOpen) {
-          setWinner(null);
-          setRotation(0);
-        }
-      }}
-    >
+    <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogTrigger asChild>
-        <button className="w-10 h-10 rounded-control bg-primary/10 hover:bg-primary/20 flex items-center justify-center transition-all active:scale-95 group border border-primary/20">
+        <button
+          type="button"
+          aria-label="Kura çarkı"
+          className="w-10 h-10 rounded-control bg-primary/10 hover:bg-primary/20 flex items-center justify-center transition-all active:scale-95 group border border-primary/20"
+        >
           <Dices className="w-5 h-5 text-primary group-hover:-rotate-12 transition-transform duration-300" />
         </button>
       </DialogTrigger>
-      <DialogContent className="rounded-[36px] border-none shadow-2xl p-6 max-w-sm w-[95%]">
+      <DialogContent className="rounded-[36px] border-none shadow-2xl p-6 max-w-sm w-[95%] max-h-[90vh] overflow-y-auto">
         <DialogHeader className="mb-2">
           <DialogTitle className="text-center font-semibold text-xl">Kura Çarkı</DialogTitle>
         </DialogHeader>
 
-        <div className="flex flex-col items-center py-2 space-y-6 overflow-hidden">
+        <div className="flex flex-col items-center py-2 space-y-6">
           {/* ÇARK KABUĞU */}
-          <div className="relative w-64 h-64 flex items-center justify-center mt-2">
+          <div className="relative w-64 h-64 flex items-center justify-center mt-2 shrink-0">
             {/* Gösterge Oku */}
             <div
               className="absolute -top-4 left-1/2 -translate-x-1/2 w-6 h-8 bg-foreground z-20"
@@ -111,10 +151,10 @@ export function SpinWheelDialog() {
             <div
               className="w-full h-full rounded-full border-4 border-muted overflow-hidden shadow-[inset_0_4px_12px_rgba(0,0,0,0.2)] relative"
               style={{
-                background: getConicGradient(),
+                background: gradient,
                 transform: `rotate(${rotation}deg)`,
                 transitionProperty: "transform",
-                transitionDuration: "4s",
+                transitionDuration: `${SPIN_MS}ms`,
                 transitionTimingFunction: "cubic-bezier(0.15, 0.9, 0.25, 1)",
               }}
             >
@@ -135,12 +175,12 @@ export function SpinWheelDialog() {
 
             {/* Merkez Nokta */}
             <div className="absolute w-8 h-8 bg-background rounded-full z-10 shadow-xl border-4 border-muted flex items-center justify-center">
-              <div className="w-2 h-2 bg-primary rounded-full"></div>
+              <div className="w-2 h-2 bg-primary rounded-full" />
             </div>
           </div>
 
           {/* SONUÇ & BİLGİ */}
-          <div className="h-16 flex items-center justify-center w-full">
+          <div className="h-16 flex items-center justify-center w-full shrink-0">
             {winner && !isSpinning ? (
               <div className="bg-primary/10 border-2 border-primary/20 text-primary px-6 py-3 w-full rounded-card font-semibold text-xl flex items-center justify-center gap-3 animate-screen-enter">
                 <PartyPopper className="w-6 h-6 animate-bounce" /> {winner}
@@ -159,7 +199,7 @@ export function SpinWheelDialog() {
           <Button
             onClick={spin}
             disabled={isSpinning || activeWorkers.length === 0}
-            className="w-full h-14 rounded-card font-semibold text-lg shadow-xl shadow-primary/20 transition-all active:scale-95 border-b-4 border-primary/40 active:border-b-0 active:translate-y-1"
+            className="w-full h-14 shrink-0 rounded-card font-semibold text-lg shadow-xl shadow-primary/20 transition-all active:scale-95 border-b-4 border-primary/40 active:border-b-0 active:translate-y-1"
           >
             {isSpinning ? "BEKLENİYOR..." : "ÇEVİR"}
           </Button>
@@ -175,6 +215,8 @@ export function SpinWheelDialog() {
                 .map((w) => (
                   <button
                     key={w.id}
+                    type="button"
+                    aria-pressed={selectedIds.has(w.id)}
                     onClick={() => toggleWorker(w.id)}
                     disabled={isSpinning}
                     className={`flex items-center gap-1.5 px-3 py-2 rounded-control border-2 transition-all shrink-0 text-xs font-bold active:scale-95 ${

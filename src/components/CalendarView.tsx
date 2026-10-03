@@ -1,13 +1,5 @@
 import { useEffect, useMemo, useRef, useState, useCallback, memo } from "react";
-import {
-  format,
-  startOfMonth,
-  endOfMonth,
-  eachDayOfInterval,
-  isToday,
-  getDay,
-  isSameWeek,
-} from "date-fns";
+import { format, startOfMonth, endOfMonth, eachDayOfInterval, isToday, getDay } from "date-fns";
 import { tr } from "date-fns/locale";
 import { Check, Minus, X, Palmtree, Users, Archive, Repeat, Rows3, Rows4 } from "lucide-react";
 import { useWorkerStore } from "../stores/workerStore";
@@ -16,17 +8,22 @@ import { useMetricsStore } from "../stores/metricsStore";
 import { usePeriodStore } from "../stores/periodStore";
 import { useToastStore } from "../stores/toastStore";
 import { TableSkeleton } from "./ui/skeleton";
-import type { DailyMetric, Attendance, Worker, AttendanceStatus } from "../types";
+import type { DailyMetric, Attendance, Worker, WorkerRate, AttendanceStatus } from "../types";
 import { calculateDailyEarnings, rateResolverFor } from "../utils/earningsCalculator";
 import { useAnimatedCounter } from "../hooks/useAnimatedCounter";
 import { periodOfDate } from "../lib/period";
+import { readPref, writePref } from "../lib/prefs";
+import { formatMoney } from "../lib/utils";
 import { workerInitials } from "../utils/initials";
 import { WorkerAvatar } from "./ui/worker-avatar";
+import { EmptyState } from "./EmptyState";
 
 interface CalendarViewProps {
   currentDate: Date;
   onDayClick: (date: string) => void;
   onWorkerClick?: (worker: Worker) => void;
+  /** Boş durumdaki "Personel Ekle" düğmesi nereye gidecek. */
+  onGoToWorkers?: () => void;
 }
 
 /** Lejant, hücreler ve gün sayfası aynı kaynaktan beslenir. */
@@ -79,13 +76,132 @@ type DensityKey = keyof typeof DENSITY;
 
 /** Gün ve sağ sütun sabit; kişi sütunları kalan yeri paylaşır. */
 const COL = { day: "3.25rem", side: "4.5rem" };
-const WORKER_CELL: React.CSSProperties = { flex: "1 0 2.5rem", minWidth: "2.5rem" };
+
+/**
+ * Puantaj hücresi tabanı.
+ *
+ * 44px, `.tap-target` ile aynı sayı olmak ZORUNDA: taban 44'e çıktıktan sonra
+ * "Sağda N kişi daha var" uyarısı da hücre genişliğinden bölmeli, yoksa
+ * uyarı yanlış sayı gösterir. Tek kaynak: `CELL_PX`.
+ */
+const CELL_PX = 44;
+const WORKER_CELL: React.CSSProperties = { flex: "1 0 2.75rem", minWidth: "2.75rem" };
+
+/**
+ * Roving tabindex (APG "ızgara" kalıbı) koordinat yardımcıları.
+ *
+ * Takvim ızgarasında tek Tab durağı vardır; gezinme ok tuşlarıyla yapılır.
+ * Her hücre ayrı bir Tab durağı olsaydı (31 gün × ekip + gün/sağ sütun)
+ * klavyeyle alt navigasyona ulaşmak binlerce Tab basışı sürerdi.
+ *
+ * Koordinat: satır 0 = başlık, 1..G = günler; sütun 0 = gün, 1..K = kişiler,
+ * K+1 = sağ sütun. Odaklanabilir hücreler `data-cal-cell="satır-sütun"` taşır.
+ */
+type CellPos = [number, number];
+
+const parseCalCell = (value: string | undefined): CellPos | null => {
+  const match = /^(\d+)-(\d+)$/.exec(value ?? "");
+  return match ? [Number(match[1]), Number(match[2])] : null;
+};
+
+/** Başlıkta "Gün" sütunu etkileşimli değil; kapanmış dönemde kişi hücreleri kapalı. */
+const isFocusableCell = (
+  row: number,
+  col: number,
+  workerCount: number,
+  dayCount: number,
+  readOnly: boolean,
+): boolean => {
+  if (row < 0 || row > dayCount || col < 0 || col > workerCount + 1) return false;
+  if (row === 0 && col === 0) return false;
+  if (row > 0 && col >= 1 && col <= workerCount && readOnly) return false;
+  return true;
+};
+
+/**
+ * Ok/Home/End için hedef hücreyi arar. Yol üstündeki devre dışı hücreler
+ * (kapanmış dönemin puantaj hücreleri) atlanır; o yönde açık hücre yoksa
+ * odak yerinde kalır ve kaydırma tarayıcıya bırakılır.
+ */
+const stepRoving = (
+  from: CellPos,
+  key: string,
+  bounds: { workerCount: number; dayCount: number; readOnly: boolean },
+): CellPos | null => {
+  const { workerCount, dayCount, readOnly } = bounds;
+  const open = (row: number, col: number) =>
+    isFocusableCell(row, col, workerCount, dayCount, readOnly);
+  switch (key) {
+    case "ArrowLeft":
+      for (let col = from[1] - 1; col >= 0; col--) if (open(from[0], col)) return [from[0], col];
+      return null;
+    case "ArrowRight":
+      for (let col = from[1] + 1; col <= workerCount + 1; col++)
+        if (open(from[0], col)) return [from[0], col];
+      return null;
+    case "ArrowUp":
+      for (let row = from[0] - 1; row >= 0; row--) if (open(row, from[1])) return [row, from[1]];
+      return null;
+    case "ArrowDown":
+      for (let row = from[0] + 1; row <= dayCount; row++)
+        if (open(row, from[1])) return [row, from[1]];
+      return null;
+    case "Home":
+      for (let col = 0; col <= workerCount + 1; col++)
+        if (open(from[0], col)) return [from[0], col];
+      return null;
+    case "End":
+      for (let col = workerCount + 1; col >= 0; col--)
+        if (open(from[0], col)) return [from[0], col];
+      return null;
+    default:
+      return null;
+  }
+};
 
 const compactMoney = (n: number) => {
   const abs = Math.abs(n);
   if (abs >= 1000) return `${n < 0 ? "-" : ""}${Math.round(abs / 1000)}b`;
   return String(Math.round(n));
 };
+
+/** Bir güne ait puantajlar: çalışan id → kayıt. */
+type DayAttendance = Record<string, Attendance>;
+
+/**
+ * Puantajları güne göre gruplar.
+ *
+ * İki işi birden yapar:
+ *  1. `memo`lanmış satırlara yalnızca kendi gününü verir — bir hücreye
+ *     dokunmak ayın 31 satırını değil, tek satırını geçersiz kılar.
+ *  2. İçeriği değişmeyen günün referansını korur; aksi hâlde her puantaj
+ *     dokunuşunda bütün gün nesneleri yeniden üretilir, `memo` yine tutmaz.
+ */
+function groupByDate(attendances: readonly Attendance[]): Map<string, DayAttendance> {
+  const grouped = new Map<string, Map<string, Attendance>>();
+  for (const a of attendances) {
+    const date = String(a.date).trim();
+    const workerId = String(a.worker_id).trim();
+    let bucket = grouped.get(date);
+    if (!bucket) {
+      bucket = new Map();
+      grouped.set(date, bucket);
+    }
+    bucket.set(workerId, a);
+  }
+  return new Map([...grouped].map(([date, bucket]) => [date, Object.fromEntries(bucket)]));
+}
+
+/** İki gün kaydı aynı mı? (aynı çalışan kümesi, aynı kayıt referansları) */
+function sameDayAttendance(a: DayAttendance | undefined, b: DayAttendance): boolean {
+  if (!a) return false;
+  const aKeys = Object.keys(a);
+  if (aKeys.length !== Object.keys(b).length) return false;
+  return aKeys.every((k) => a[k] === b[k]);
+}
+
+/** Kaydı olmayan günler için paylaşılan boş nesne — referansı sabit kalmalı. */
+const EMPTY_DAY: DayAttendance = {};
 
 function StatusMark({
   status,
@@ -110,6 +226,73 @@ function StatusMark({
   );
 }
 
+interface MonthStatsProps {
+  production: number;
+  revenue: number;
+  netProfit: number;
+}
+const plainNumber = (n: number) => n.toLocaleString("tr-TR");
+
+/**
+ * Animasyonlu sayı.
+ *
+ * Kareler DOM'a yazılır; bileşen kare başına yeniden çizilmez. Düğüm
+ * callback ref ile state'e alınır çünkü `useRef.current` ilk render'da hâlâ
+ * `null`'dır — effect bu değere baksaydı animasyon hiç başlamazdı. Bu tek
+ * ek render yalnızca bu kutuyu etkiler.
+ */
+function Counter({ target, format }: { target: number; format: (n: number) => string }) {
+  const [node, setNode] = useState<HTMLSpanElement | null>(null);
+  useAnimatedCounter(node, target, format);
+  return (
+    <span ref={setNode} className="block truncate">
+      {format(target)}
+    </span>
+  );
+}
+
+/**
+ * Ay özeti.
+ *
+ * Sayaç, takvim grid'inden iki katmanlı ayrıldı: kareler doğrudan DOM'a
+ * yazılıyor ve bu bileşen yalnızca hedef değerler değiştiğinde çiziliyor.
+ * Önceden sayaç `CalendarView`'in state'iydi; her karede `setValue` tüm takvimi
+ * yeniden çiziyordu — bir puantaj dokunuşundan sonraki bir saniye boyunca
+ * saniyede ~180 tam render.
+ */
+function MonthStats({ production, revenue, netProfit }: MonthStatsProps) {
+  return (
+    <div className="px-4 pb-3 bg-surface shrink-0 grid grid-cols-3 gap-3">
+      <StatBox label="Palet" tone="text-foreground">
+        <Counter target={production} format={plainNumber} />
+      </StatBox>
+      <StatBox label="Ciro" tone="text-foreground">
+        <Counter target={Math.round(revenue)} format={formatMoney} />
+      </StatBox>
+      <StatBox label="Net kâr" tone={netProfit < 0 ? "text-bad" : "text-ok"}>
+        <Counter target={Math.round(netProfit)} format={formatMoney} />
+      </StatBox>
+    </div>
+  );
+}
+
+function StatBox({
+  label,
+  tone,
+  children,
+}: {
+  label: string;
+  tone: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="min-w-0">
+      <div className="text-[11px] text-muted-foreground leading-none mb-1">{label}</div>
+      <div className={`text-[15px] font-semibold tabular-nums truncate ${tone}`}>{children}</div>
+    </div>
+  );
+}
+
 const CalendarRow = memo(function CalendarRow({
   dateStr,
   dayNum,
@@ -119,12 +302,14 @@ const CalendarRow = memo(function CalendarRow({
   today,
   sideValue,
   workers,
-  attendanceMap,
+  attendance,
   readOnly,
   density,
   onDayClick,
   onCellTap,
-  rowRef,
+  rowIndex,
+  tabbableCol,
+  attachRowRef,
 }: {
   dateStr: string;
   dayNum: string;
@@ -134,12 +319,18 @@ const CalendarRow = memo(function CalendarRow({
   today: boolean;
   sideValue: string | null;
   workers: readonly Worker[];
-  attendanceMap: Record<string, Attendance>;
+  /** Yalnızca BU güne ait kayıtlar; değişmeyen günlerde referans korunur. */
+  attendance: Record<string, Attendance>;
   readOnly: boolean;
   density: (typeof DENSITY)[DensityKey];
   onDayClick: (date: string) => void;
   onCellTap: (worker: Worker, dateStr: string, current: AttendanceStatus | null) => void;
-  rowRef?: (el: HTMLDivElement | null) => void;
+  /** Roving tabindex satır koordinatı; başlık satırı 0, günler 1..G. */
+  rowIndex: number;
+  /** Bu satırda Tab durağı olan sütun; odak başka satırdaysa `null`. */
+  tabbableCol: number | null;
+  /** Callback ref; yalnızca bugünün satırında verilir. */
+  attachRowRef?: (el: HTMLDivElement | null) => void;
 }) {
   // Satır ve sabit sütunlar AYNI katı zemini kullanır; böylece hiçbir durumda
   // iki tonlu görünmez ve yatay kaydırmada altları görünmez.
@@ -147,7 +338,7 @@ const CalendarRow = memo(function CalendarRow({
 
   return (
     <div
-      ref={rowRef}
+      ref={today ? attachRowRef : undefined}
       data-date={dateStr}
       className={`flex ${density.row} items-stretch ${rowTone}`}
     >
@@ -155,8 +346,10 @@ const CalendarRow = memo(function CalendarRow({
         type="button"
         onClick={() => onDayClick(dateStr)}
         aria-label={`${label} gününü aç`}
+        tabIndex={tabbableCol === 0 ? 0 : -1}
+        data-cal-cell={`${rowIndex}-0`}
         style={{ width: COL.day }}
-        className={`shrink-0 sticky left-0 z-20 flex items-center justify-center gap-1 border-b border-r border-border/50 active:scale-95 transition-transform ${
+        className={`tap-target shrink-0 sticky left-0 z-20 flex items-center justify-center gap-1 border-b border-r border-border/50 active:scale-95 transition-transform ${
           today ? "bg-primary text-primary-foreground" : rowTone
         }`}
       >
@@ -166,8 +359,8 @@ const CalendarRow = memo(function CalendarRow({
         </span>
       </button>
 
-      {workers.map((w) => {
-        const status = attendanceMap[`${dateStr}-${w.id}`]?.status ?? null;
+      {workers.map((w, workerIndex) => {
+        const status = attendance[String(w.id)]?.status ?? null;
         return (
           <button
             key={w.id}
@@ -175,8 +368,10 @@ const CalendarRow = memo(function CalendarRow({
             disabled={readOnly}
             onClick={() => onCellTap(w, dateStr, status)}
             aria-label={`${w.name}, ${label}: ${status ? STATUS_STYLE[status].label : "kayıt yok"}`}
+            tabIndex={tabbableCol === workerIndex + 1 ? 0 : -1}
+            data-cal-cell={`${rowIndex}-${workerIndex + 1}`}
             style={WORKER_CELL}
-            className="flex items-center justify-center border-b border-border/40 active:scale-90 transition-transform disabled:active:scale-100 hover:bg-muted/40 disabled:hover:bg-transparent"
+            className="tap-target flex items-center justify-center border-b border-border/40 active:scale-90 transition-transform disabled:active:scale-100 hover:bg-muted/40 disabled:hover:bg-transparent"
           >
             <StatusMark status={status} density={density} />
           </button>
@@ -187,8 +382,10 @@ const CalendarRow = memo(function CalendarRow({
         type="button"
         onClick={() => onDayClick(dateStr)}
         aria-label={`${label} gününün verilerini düzenle`}
+        tabIndex={tabbableCol === workers.length + 1 ? 0 : -1}
+        data-cal-cell={`${rowIndex}-${workers.length + 1}`}
         style={{ width: COL.side }}
-        className={`shrink-0 sticky right-0 z-20 flex items-center justify-center border-b border-l border-border/50 active:scale-95 transition-transform ${rowTone}`}
+        className={`tap-target shrink-0 sticky right-0 z-20 flex items-center justify-center border-b border-l border-border/50 active:scale-95 transition-transform ${rowTone}`}
       >
         {sideValue ? (
           <span className="text-[13px] font-semibold tabular-nums text-primary">{sideValue}</span>
@@ -200,7 +397,12 @@ const CalendarRow = memo(function CalendarRow({
   );
 });
 
-export function CalendarView({ currentDate, onDayClick, onWorkerClick }: CalendarViewProps) {
+export function CalendarView({
+  currentDate,
+  onDayClick,
+  onWorkerClick,
+  onGoToWorkers,
+}: CalendarViewProps) {
   const allWorkers = useWorkerStore((s) => s.workers);
   const rateHistory = useWorkerStore((s) => s.rateHistory);
   const workersLoading = useWorkerStore((s) => s.isLoading);
@@ -217,30 +419,62 @@ export function CalendarView({ currentDate, onDayClick, onWorkerClick }: Calenda
   const isLoading = workersLoading || attLoading || metricsLoading;
   const isClosed = closedPeriods.some((c) => c.period === periodOfDate(currentDate));
 
+  /**
+   * `App.tsx` her render'da yeni bir arrow fonksiyon üretiyor. `CalendarRow`
+   * `memo`landığı için bu referans her seferinde değişiyor ve memo hiç tutmuyor;
+   * en pahalı render yolu (31 satır × 40 hücre) gereksizce yeniden çiziliyordu.
+   * Ref ile sarıyoruz: dışarıdaki fonksiyon değişse bile satırların gördüğü
+   * referans sabit kalır.
+   */
+  const onDayClickRef = useRef(onDayClick);
+  onDayClickRef.current = onDayClick;
+  const handleDayClick = useCallback((dateStr: string) => onDayClickRef.current(dateStr), []);
+
+  /** Bugünün satırına callback ref — render'da yeni arrow üretmiyor. */
+  const attachTodayRow = useCallback((el: HTMLDivElement | null) => {
+    todayRowRef.current = el;
+  }, []);
+
   const [density, setDensity] = useState<DensityKey>(() =>
-    localStorage.getItem("calendar-density") === "compact" ? "compact" : "normal",
+    readPref("calendar-density") === "compact" ? "compact" : "normal",
   );
 
   const toggleDensity = () => {
     const next: DensityKey = density === "normal" ? "compact" : "normal";
     setDensity(next);
-    localStorage.setItem("calendar-density", next);
+    writePref("calendar-density", next);
   };
 
   const [sideMetric, setSideMetric] = useState<MetricKey>(() => {
-    const saved = localStorage.getItem("calendar-side-metric");
+    const saved = readPref("calendar-side-metric");
     return METRICS.some((m) => m.key === saved) ? (saved as MetricKey) : "production";
   });
 
   const cycleSideMetric = () => {
     const next = METRICS[(METRICS.findIndex((m) => m.key === sideMetric) + 1) % METRICS.length].key;
     setSideMetric(next);
-    localStorage.setItem("calendar-side-metric", next);
+    writePref("calendar-side-metric", next);
   };
 
   const headerRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const todayRowRef = useRef<HTMLDivElement>(null);
+  /** Önceki render'daki gün→kayıt haritası; değişmeyen gün referansını korumak için. */
+  const dayAttendanceRef = useRef<Map<string, DayAttendance>>(new Map());
+  /** Gün başına kâr önbelleği; bağımlılıkları değişmeyen günler yeniden hesaplanmaz. */
+  const profitCacheRef = useRef(
+    new Map<
+      string,
+      {
+        day: DayAttendance | undefined;
+        earned: number;
+        extra: number;
+        workers: readonly Worker[];
+        rates: readonly WorkerRate[];
+        value: number;
+      }
+    >(),
+  );
 
   const daysInMonth = useMemo(
     () => eachDayOfInterval({ start: startOfMonth(currentDate), end: endOfMonth(currentDate) }),
@@ -252,11 +486,90 @@ export function CalendarView({ currentDate, onDayClick, onWorkerClick }: Calenda
     [allWorkers],
   );
 
+  /**
+   * Roving tabindex durumu — bkz. `stepRoving` notu. Izgarada tek Tab durağı
+   * vardır; `[satır, sütun]` o durağın koordinatını tutar.
+   */
+  const rootRef = useRef<HTMLDivElement>(null);
+  const [rovingCell, setRovingCell] = useState<CellPos>([1, 0]);
+
+  const workerCount = activeWorkers.length;
+  const dayCount = daysInMonth.length;
+  // Ay/ekip değişince hedef hücre yok olabilir; Tab durağı her zaman var olan
+  // bir hücrede kalmalı. Başlık satırında "Gün" sütunu etkileşimli değil.
+  const rovingRow = Math.min(Math.max(rovingCell[0], 0), dayCount);
+  const clampedCol = Math.min(Math.max(rovingCell[1], 0), workerCount + 1);
+  const rovingCol = rovingRow === 0 && clampedCol === 0 ? Math.min(1, workerCount + 1) : clampedCol;
+
+  const focusCell = useCallback((cell: CellPos) => {
+    rootRef.current?.querySelector<HTMLElement>(`[data-cal-cell="${cell[0]}-${cell[1]}"]`)?.focus();
+  }, []);
+
+  const handleGridKeyDown = useCallback(
+    (event: React.KeyboardEvent<HTMLDivElement>) => {
+      const from = parseCalCell((event.target as HTMLElement).dataset.calCell);
+      if (!from) return;
+      const to = stepRoving(from, event.key, { workerCount, dayCount, readOnly: isClosed });
+      // Ok tuşu hiçbir hücreye gitmiyorsa kaydırma tarayıcıda kalsın.
+      if (!to) return;
+      event.preventDefault();
+      setRovingCell(to);
+      focusCell(to);
+    },
+    [workerCount, dayCount, isClosed, focusCell],
+  );
+
+  /** Ok tuşuyla ya da tıkla gelinen hücre Tab durağı olur. */
+  const handleGridFocus = useCallback((event: React.FocusEvent<HTMLDivElement>) => {
+    const cell = parseCalCell((event.target as HTMLElement).dataset.calCell);
+    if (!cell) return;
+    setRovingCell((prev) => (prev[0] === cell[0] && prev[1] === cell[1] ? prev : cell));
+  }, []);
+
   /** Bu ayda kaydı olan arşivlenmiş çalışanlar — hesaba girer, sütun almaz. */
   const archivedWithData = useMemo(() => {
-    const ids = new Set(attendances.map((a) => Number(a.worker_id)));
-    return allWorkers.filter((w) => w.is_active === false && ids.has(w.id));
+    // Kayıt kimliklerinin tamamı yerine YALNIZCA arşivli çalışanlar bir kümeye
+    // konur: 22 bin satırlık diziden `Set` kurmak her puantaj değişiminde
+    // gereksizce tüm ayı tarıyordu. Arşivli çalışan yoksa hiç taranmaz.
+    const archivedIds: Record<number, true> = {};
+    let archivedCount = 0;
+    for (const w of allWorkers) {
+      if (w.is_active === false) {
+        archivedIds[w.id] = true;
+        archivedCount += 1;
+      }
+    }
+    if (archivedCount === 0) return [];
+
+    const found: Record<number, true> = {};
+    let foundCount = 0;
+    for (const a of attendances) {
+      const id = Number(a.worker_id);
+      if (archivedIds[id] && !found[id]) {
+        found[id] = true;
+        foundCount += 1;
+        // Hepsi bulundu; kalan satırları taramanın anlamı yok.
+        if (foundCount === archivedCount) break;
+      }
+    }
+    return allWorkers.filter((w) => w.is_active === false && found[w.id]);
   }, [allWorkers, attendances]);
+
+  /**
+   * Güne göre gruplanmış puantajlar. Satırlar yalnızca kendi gününü alır;
+   * değişmeyen günün referansı korunur, böylece `memo` gerçekten tutar.
+   */
+  const attendanceByDate = useMemo(() => {
+    const grouped = groupByDate(attendances);
+    const previous = dayAttendanceRef.current;
+    const next = new Map<string, DayAttendance>();
+    for (const [date, day] of grouped) {
+      const before = previous.get(date);
+      next.set(date, sameDayAttendance(before, day) ? (before as DayAttendance) : day);
+    }
+    dayAttendanceRef.current = next;
+    return next;
+  }, [attendances]);
 
   const calcWorkers = useMemo(
     () => [...activeWorkers, ...archivedWithData],
@@ -281,7 +594,16 @@ export function CalendarView({ currentDate, onDayClick, onWorkerClick }: Calenda
   useEffect(() => {
     if (format(currentDate, "yyyy-MM") !== format(new Date(), "yyyy-MM")) return;
     const timer = setTimeout(() => {
-      todayRowRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+      // `prefers-reduced-motion` isteyen kullanıcıya kayma animasyonu yapılmaz.
+      // CSS'teki global kural JS'in `behavior: "smooth"` çağrısını susturmaz;
+      // karar burada verilir.
+      const reduced =
+        typeof window.matchMedia === "function" &&
+        window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      todayRowRef.current?.scrollIntoView({
+        behavior: reduced ? "auto" : "smooth",
+        block: "center",
+      });
     }, 250);
     return () => clearTimeout(timer);
   }, [currentDate, daysInMonth.length, activeWorkers.length]);
@@ -301,9 +623,13 @@ export function CalendarView({ currentDate, onDayClick, onWorkerClick }: Calenda
 
     const sync = () => {
       headerView.scrollLeft = scrollView.scrollLeft;
-      // Taşma varken kişi sütunları tabana (40px) oturmuş olur.
+      // Taşma varken kişi sütunları tabana oturmuş olur; bölücü `CELL_PX`
+      // olmalı, yoksa uyarı hücre genişliğinden sapar.
       const remaining = scrollView.scrollWidth - scrollView.clientWidth - scrollView.scrollLeft;
-      setHiddenCount(remaining > 4 ? Math.round(remaining / 40) : 0);
+      const next = remaining > 4 ? Math.round(remaining / CELL_PX) : 0;
+      // Dokunmatik kaydırmada bu olay kare başına gelir; aynı sayıyı tekrar
+      // set etmek tüm takvimi yeniden çiziyordu. React aynı değerde çıkış yapar.
+      setHiddenCount(next);
     };
     sync();
 
@@ -316,14 +642,6 @@ export function CalendarView({ currentDate, onDayClick, onWorkerClick }: Calenda
     };
   }, [activeWorkers.length]);
 
-  const attendanceMap = useMemo(() => {
-    const map: Record<string, Attendance> = {};
-    attendances.forEach((a) => {
-      map[`${String(a.date).trim()}-${String(a.worker_id).trim()}`] = a;
-    });
-    return map;
-  }, [attendances]);
-
   const metricsMap = useMemo(() => {
     const map: Record<string, DailyMetric> = {};
     metrics.forEach((m) => {
@@ -332,32 +650,61 @@ export function CalendarView({ currentDate, onDayClick, onWorkerClick }: Calenda
     return map;
   }, [metrics]);
 
-  /** Gün başına net kâr — sağ sütun ve hafta toplamları için. */
+  /**
+   * Gün başına net kâr — sağ sütun ve hafta toplamları için.
+   *
+   * Bir hücreye dokunmak artık ayın 31 gününü yeniden hesaplamıyor: her günün
+   * sonucu, o günün puantaj/ölçüm/ekip referansları değişmediyse önbellekten
+   * gelir. Tek değişen gün yeniden hesaplanır, kalan 30 gün atlanır.
+   */
   const profitByDate = useMemo(() => {
-    const byDate = new Map<string, Attendance[]>();
-    for (const a of attendances) {
-      const key = String(a.date).trim();
-      const bucket = byDate.get(key);
-      if (bucket) bucket.push(a);
-      else byDate.set(key, [a]);
-    }
-
+    const cache = profitCacheRef.current;
     const map: Record<string, number> = {};
+
     for (const metric of metrics) {
       const dateStr = String(metric.date).trim();
-      const statusMap: Record<number, AttendanceStatus | null> = {};
-      for (const a of byDate.get(dateStr) ?? []) statusMap[Number(a.worker_id)] = a.status;
+      const day = attendanceByDate.get(dateStr);
+      const earned = metric.total_earned || 0;
+      const extra = metric.extra_expenses || 0;
 
-      map[dateStr] = calculateDailyEarnings(
+      const cached = cache.get(dateStr);
+      if (
+        cached &&
+        cached.day === day &&
+        cached.earned === earned &&
+        cached.extra === extra &&
+        cached.workers === calcWorkers &&
+        cached.rates === rateHistory
+      ) {
+        map[dateStr] = cached.value;
+        continue;
+      }
+
+      const statusMap: Record<number, AttendanceStatus | null> = {};
+      if (day) {
+        for (const [workerId, a] of Object.entries(day)) statusMap[Number(workerId)] = a.status;
+      }
+
+      const value = calculateDailyEarnings(
         calcWorkers,
         statusMap,
-        metric.total_earned || 0,
-        metric.extra_expenses || 0,
+        earned,
+        extra,
         rateResolverFor(dateStr, rateHistory),
       ).netProfit;
+
+      cache.set(dateStr, { day, earned, extra, workers: calcWorkers, rates: rateHistory, value });
+      map[dateStr] = value;
+    }
+
+    // Ay değiştiyse eski günlerin önbelleği boşta yer kaplamasın.
+    if (cache.size !== Object.keys(map).length) {
+      for (const date of cache.keys()) {
+        if (!(date in map)) cache.delete(date);
+      }
     }
     return map;
-  }, [metrics, attendances, calcWorkers, rateHistory]);
+  }, [metrics, attendanceByDate, calcWorkers, rateHistory]);
 
   const stats = useMemo(() => {
     let production = 0;
@@ -370,9 +717,10 @@ export function CalendarView({ currentDate, onDayClick, onWorkerClick }: Calenda
     return { production, revenue, netProfit };
   }, [metrics, profitByDate]);
 
-  const animProduction = useAnimatedCounter(stats.production, "palet");
-  const animRevenue = useAnimatedCounter(Math.round(stats.revenue), "revenue");
-  const animProfit = useAnimatedCounter(Math.round(stats.netProfit), "profit");
+  // Sayaç animasyonu bilinçli olarak AYRI bir bileşende yaşıyor: sayaç her
+  // karede değer değiştirir, state burada olsaydı saniyede ~180 kez tüm
+  // takvim yeniden çizilirdi. `MonthStats` yalnızca kendi üç hanesini render
+  // eder; grid bu render'lardan habersiz kalır.
 
   const sideValueFor = useCallback(
     (dateStr: string): string | null => {
@@ -416,72 +764,70 @@ export function CalendarView({ currentDate, onDayClick, onWorkerClick }: Calenda
     [markAttendance, addToast],
   );
 
-  /** Hafta özetleri: yevmiye zaten haftalık hesaplandığı için doğal ayraç. */
+  /**
+   * Hafta özetleri: yevmiye zaten haftalık hesaplandığı için doğal ayraç.
+   *
+   * Anahtar, ayın içindeki o haftanın İLK günü — render da hafta bandını
+   * aynı koşulla (`index === 0 || getDay === 1`) açıyor. Önceki kod her gün
+   * için `daysInMonth.find(isSameWeek)` ile diziyi yeniden tarıyordu (O(n²));
+   * günler zaten sıralı olduğu için tek geçişte bulunur.
+   */
   const weekSummaries = useMemo(() => {
     const result: Record<string, { days: number; production: number; revenue: number }> = {};
-    for (const day of daysInMonth) {
+    let weekKey = "";
+    daysInMonth.forEach((day, index) => {
       const dateStr = format(day, "yyyy-MM-dd");
+      if (index === 0 || getDay(day) === 1) weekKey = dateStr;
+
       const metric = metricsMap[dateStr];
-      if (!metric) continue;
-      const weekKey = daysInMonth.find((d) => isSameWeek(d, day, { weekStartsOn: 1 }))!;
-      const key = format(weekKey, "yyyy-MM-dd");
-      const bucket = (result[key] ??= { days: 0, production: 0, revenue: 0 });
+      if (!metric) return;
+
+      const bucket = (result[weekKey] ??= { days: 0, production: 0, revenue: 0 });
       bucket.days += 1;
       bucket.production += metric.production_amount || 0;
       bucket.revenue += metric.total_earned || 0;
-    }
+    });
     return result;
   }, [daysInMonth, metricsMap]);
 
   if (activeWorkers.length === 0) {
     if (isLoading) return <TableSkeleton rows={6} cols={4} />;
-    return (
-      <div className="flex-1 flex flex-col items-center justify-center p-8 text-center gap-4">
-        <div className="w-20 h-20 rounded-full bg-primary/10 flex items-center justify-center">
-          <Users className="w-9 h-9 text-primary/60" />
+    // Navigasyon callback'i verilmemişse (bileşen testte tek başına
+    // çiziliyor) eski davranışa düşer: metin yönlendirme yeterli.
+    if (!onGoToWorkers) {
+      return (
+        <div className="flex-1 flex flex-col items-center justify-center p-8 text-center gap-4">
+          <div className="w-20 h-20 rounded-full bg-primary/10 flex items-center justify-center">
+            <Users className="w-9 h-9 text-primary/60" />
+          </div>
+          <div className="space-y-1.5">
+            <h2 className="text-lg font-semibold tracking-tight">Henüz çalışan yok</h2>
+            <p className="text-sm text-muted-foreground leading-relaxed max-w-64">
+              Puantaj tutmaya başlamak için <span className="text-foreground">Kişiler</span>{" "}
+              sekmesinden ekibinizi ekleyin.
+            </p>
+          </div>
         </div>
-        <div className="space-y-1.5">
-          <h2 className="text-lg font-semibold tracking-tight">Henüz çalışan yok</h2>
-          <p className="text-sm text-muted-foreground leading-relaxed max-w-64">
-            Puantaj tutmaya başlamak için <span className="text-foreground">Kişiler</span>{" "}
-            sekmesinden ekibinizi ekleyin.
-          </p>
-        </div>
-      </div>
-    );
+      );
+    }
+    return <EmptyState onGoToWorkers={onGoToWorkers} />;
   }
 
   const activeMetricLabel = METRICS.find((m) => m.key === sideMetric)!.label;
 
   return (
-    <div className="flex-1 flex flex-col w-full min-h-0 overflow-hidden">
-      {/* Ay özeti */}
-      <div className="px-4 pb-3 bg-surface shrink-0 grid grid-cols-3 gap-3">
-        {[
-          {
-            label: "Palet",
-            value: animProduction.toLocaleString("tr-TR"),
-            tone: "text-foreground",
-          },
-          {
-            label: "Ciro",
-            value: `₺${animRevenue.toLocaleString("tr-TR")}`,
-            tone: "text-foreground",
-          },
-          {
-            label: "Net kâr",
-            value: `₺${animProfit.toLocaleString("tr-TR")}`,
-            tone: stats.netProfit < 0 ? "text-bad" : "text-ok",
-          },
-        ].map((stat) => (
-          <div key={stat.label} className="min-w-0">
-            <div className="text-[11px] text-muted-foreground leading-none mb-1">{stat.label}</div>
-            <div className={`text-[15px] font-semibold tabular-nums truncate ${stat.tone}`}>
-              {stat.value}
-            </div>
-          </div>
-        ))}
-      </div>
+    <div
+      ref={rootRef}
+      onKeyDown={handleGridKeyDown}
+      onFocus={handleGridFocus}
+      className="flex-1 flex flex-col w-full min-h-0 overflow-hidden"
+    >
+      {/* Ay özeti — sayaç animasyonu bu bileşenin içinde kalır */}
+      <MonthStats
+        production={stats.production}
+        revenue={stats.revenue}
+        netProfit={stats.netProfit}
+      />
 
       {isClosed && (
         <div className="px-4 py-1.5 bg-info-soft text-info text-[11px] font-medium text-center shrink-0">
@@ -503,14 +849,17 @@ export function CalendarView({ currentDate, onDayClick, onWorkerClick }: Calenda
           onClick={toggleDensity}
           aria-label={`Satır yüksekliği: ${DENSITY[density].label}. Değiştirmek için dokunun.`}
           title={`Satır yüksekliği: ${DENSITY[density].label}`}
-          className="shrink-0 w-7 h-7 rounded-lg grid place-items-center hover:bg-muted hover:text-foreground active:scale-90 transition-all"
+          className="tap-target shrink-0 w-7 h-7 rounded-lg grid place-items-center hover:bg-muted hover:text-foreground active:scale-90 transition-all"
         >
           {density === "normal" ? <Rows3 className="w-4 h-4" /> : <Rows4 className="w-4 h-4" />}
         </button>
       </div>
 
       {/* Tablo başlığı — isim yerine baş harf, yer kazandırır */}
-      <div ref={headerRef} className="overflow-hidden flex no-scrollbar bg-surface shrink-0">
+      <div
+        ref={headerRef}
+        className="h-scroll-touch overflow-hidden flex no-scrollbar bg-surface shrink-0"
+      >
         <div className="min-w-full flex text-[11px] text-muted-foreground border-y border-border/60">
           <div
             style={{ width: COL.day }}
@@ -518,15 +867,17 @@ export function CalendarView({ currentDate, onDayClick, onWorkerClick }: Calenda
           >
             Gün
           </div>
-          {activeWorkers.map((w) => (
+          {activeWorkers.map((w, workerIndex) => (
             <button
               key={w.id}
               type="button"
               onClick={() => onWorkerClick?.(w)}
               aria-label={`${w.name} detayını aç`}
               title={w.name}
+              tabIndex={rovingRow === 0 && rovingCol === workerIndex + 1 ? 0 : -1}
+              data-cal-cell={`0-${workerIndex + 1}`}
               style={WORKER_CELL}
-              className="py-1.5 grid place-items-center active:scale-90 transition-transform"
+              className="tap-target py-1.5 grid place-items-center active:scale-90 transition-transform"
             >
               <WorkerAvatar worker={w} size="xs" label={initials.get(w.id)} />
             </button>
@@ -535,8 +886,10 @@ export function CalendarView({ currentDate, onDayClick, onWorkerClick }: Calenda
             type="button"
             onClick={cycleSideMetric}
             aria-label={`Sağ sütun: ${activeMetricLabel}. Değiştirmek için dokunun.`}
+            tabIndex={rovingRow === 0 && rovingCol === activeWorkers.length + 1 ? 0 : -1}
+            data-cal-cell={`0-${activeWorkers.length + 1}`}
             style={{ width: COL.side }}
-            className="shrink-0 py-2 sticky right-0 z-20 bg-surface border-l border-border/50 text-primary flex items-center justify-center gap-1 active:scale-95 transition-transform"
+            className="tap-target shrink-0 py-2 sticky right-0 z-20 bg-surface border-l border-border/50 text-primary flex items-center justify-center gap-1 active:scale-95 transition-transform"
           >
             {activeMetricLabel}
             <Repeat className="w-2.5 h-2.5 opacity-60" />
@@ -558,7 +911,10 @@ export function CalendarView({ currentDate, onDayClick, onWorkerClick }: Calenda
       )}
 
       {/* Gövde */}
-      <div ref={scrollRef} className="flex-1 overflow-auto no-scrollbar pb-safe-content">
+      <div
+        ref={scrollRef}
+        className="h-scroll-touch flex-1 overflow-auto no-scrollbar pb-safe-content"
+      >
         <div className="min-w-full">
           {daysInMonth.map((date, index) => {
             const dateStr = format(date, "yyyy-MM-dd");
@@ -592,19 +948,14 @@ export function CalendarView({ currentDate, onDayClick, onWorkerClick }: Calenda
                   today={isToday(date)}
                   sideValue={sideValueFor(dateStr)}
                   workers={activeWorkers}
-                  attendanceMap={attendanceMap}
+                  attendance={attendanceByDate.get(dateStr) ?? EMPTY_DAY}
                   readOnly={isClosed}
                   density={DENSITY[density]}
-                  onDayClick={onDayClick}
+                  onDayClick={handleDayClick}
                   onCellTap={handleCellTap}
-                  rowRef={
-                    isToday(date)
-                      ? (el) => {
-                          (todayRowRef as React.MutableRefObject<HTMLDivElement | null>).current =
-                            el;
-                        }
-                      : undefined
-                  }
+                  rowIndex={index + 1}
+                  tabbableCol={rovingRow === index + 1 ? rovingCol : null}
+                  attachRowRef={isToday(date) ? attachTodayRow : undefined}
                 />
               </div>
             );

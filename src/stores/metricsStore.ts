@@ -8,7 +8,8 @@ interface MetricsState {
   metrics: DailyMetric[];
   isLoading: boolean;
   error: string | null;
-  fetchMetricsByDate: (date: string) => Promise<void>;
+  /** `silent: true` ise yükleme göstergesi kaldırılır — ekran açıkken tazeleme için. */
+  fetchMetricsByDate: (date: string, options?: { silent?: boolean }) => Promise<void>;
   fetchMetricsByDateRange: (start: string, end: string) => Promise<void>;
   updateMetrics: (
     date: string,
@@ -24,8 +25,9 @@ export const useMetricsStore = create<MetricsState>((set, get) => ({
   isLoading: false,
   error: null,
 
-  fetchMetricsByDate: async (date: string) => {
-    set({ isLoading: true, error: null });
+  fetchMetricsByDate: async (date: string, options?: { silent?: boolean }) => {
+    const silent = options?.silent === true;
+    if (!silent) set({ isLoading: true, error: null });
     try {
       const result = await metricsRepository.findByDate(date);
       set((state) => ({
@@ -33,10 +35,13 @@ export const useMetricsStore = create<MetricsState>((set, get) => ({
           ...state.metrics.filter((m) => String(m.date).trim() !== String(date).trim()),
           ...(result.length > 0 ? [result[0]] : []),
         ],
-        isLoading: false,
+        ...(silent ? {} : { isLoading: false }),
       }));
     } catch (error: unknown) {
-      set({ error: error instanceof Error ? error.message : String(error), isLoading: false });
+      set({
+        error: error instanceof Error ? error.message : String(error),
+        ...(silent ? {} : { isLoading: false }),
+      });
     }
   },
 
@@ -68,7 +73,9 @@ export const useMetricsStore = create<MetricsState>((set, get) => ({
     const t = Number(total_earned) || 0;
     const e = Number(extra_expenses) || 0;
 
-    const previous = get().metrics;
+    // Rollback yalnızca BU GÜNÜ etkiler: tüm diziyi geri yazmak, araya giren
+    // başka değişiklikleri (ör. aynı anda yüklenen ay verisi) silerdi.
+    const previousForDate = get().metrics.find((m) => String(m.date).trim() === dStr) ?? null;
 
     try {
       await metricsRepository.upsert(dStr, p, t, e, is_holiday);
@@ -94,7 +101,13 @@ export const useMetricsStore = create<MetricsState>((set, get) => ({
       }));
     } catch (error: unknown) {
       const msg = error instanceof Error ? error.message : String(error);
-      set({ metrics: previous, error: msg });
+      set((state) => ({
+        error: msg,
+        metrics: [
+          ...state.metrics.filter((m) => String(m.date).trim() !== dStr),
+          ...(previousForDate ? [previousForDate] : []),
+        ],
+      }));
       reportError(error instanceof Error ? error : new Error(msg), {
         scope: "updateMetrics",
         date: dStr,

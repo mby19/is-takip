@@ -30,20 +30,6 @@ export function TableSkeleton({ rows = 8, cols = 5 }: { rows?: number; cols?: nu
   );
 }
 
-export function ChartSkeleton() {
-  return (
-    <div className="flex items-end gap-2 h-48 p-4">
-      {Array.from({ length: 7 }).map((_, i) => (
-        <Skeleton
-          key={i}
-          className="flex-1 rounded-t-lg"
-          style={{ height: `${30 + Math.random() * 60}%` }}
-        />
-      ))}
-    </div>
-  );
-}
-
 export function DetailSkeleton() {
   return (
     <div className="space-y-4 p-4 stagger-children">
@@ -58,5 +44,3 @@ export function DetailSkeleton() {
     </div>
   );
 }
-
-export default Skeleton;

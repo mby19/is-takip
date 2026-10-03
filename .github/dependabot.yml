@@ -1,0 +1,80 @@
+# Dependabot — bağımlılık güncellemeleri.
+#
+# Neden otomatik: public repo'da açık güvenlik açıkları (npm audit / cargo
+# advisory / RUSTSEC) en çok kullanılan, en az bakılan katmandan geliyor.
+# Dependabot haftalık tarayıp PR açıyor; CI bu PR'ları doğruluyor, insan
+# sadece onaylıyor.
+#
+# Güvenlik güncellemeleri (GitHub Advisory Database) bu dosyadan bağımsız
+# çalışır ve varsayılan olarak her gün denenir — kapatılmadı.
+
+version: 2
+
+updates:
+  # 1) Uygulamanın JS bağımlılıkları (kök package.json).
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "05:00"
+      timezone: Europe/Istanbul
+    open-pull-requests-limit: 5
+    # Sürüm grupları: production bağımlılıkları tek PR'da, development
+    # (build/test araçları) tek PR'da. Ayrı ayrı açmak, 30 bağımlılık için
+    # 30 PR demek; hepsi tek PR'da ise review edilebilir bir yüzey kalmıyor.
+    groups:
+      production:
+        dependency-type: production
+        patterns:
+          - "*"
+      development:
+        dependency-type: development
+        patterns:
+          - "*"
+    # Tauri paketleri: `@tauri-apps/api` (npm) ile `tauri` crate'i (Rust)
+    # aynı minor sürümde olmak zorunda. Sürüm kayması `tauri build`'i
+    # derlemeden reddediyordu; artık src/__tests__/tauriVersions.test.ts
+    # bunu CI'da kontrol ediyor ve Dependabot PR'ı kırmızı görünce sürüm
+    # eşleştirmesi zorunlu kılıyor. Bu yüzden major bump'lar da engellenmiyor,
+    # sadece test onları yakalıyor.
+
+  # 2) Rust backend. Cargo workspace DEĞİL: src-tauri/Cargo.toml tek başına
+  #    bir paket, bu yüzden Dependabot'in dizini `/src-tauri` olmalı. Kök
+  #    (Cargo.toml yok) hata verir ve tüm Rust bağımlılıkları sessizce
+  #    gözetimsiz kalır.
+  - package-ecosystem: cargo
+    directory: /src-tauri
+    schedule:
+      interval: weekly
+      day: monday
+      time: "05:00"
+      timezone: Europe/Istanbul
+    open-pull-requests-limit: 5
+    groups:
+      production:
+        dependency-type: production
+        patterns:
+          - "*"
+      development:
+        dependency-type: development
+        patterns:
+          - "*"
+
+  # 3) Action'lar. Bunlar doğrudan uygulama kodunu etkilemiyor ama CI'ın
+  #    kendisini çalıştırıyor — public repo'da üçüncü taraf action
+  #    güvenliği doğrudan savunma katmanı. Not: ci.yml ve codeql.yml
+  #    action'ları commit SHA'sına pin'liyor; Dependabot SHA'yı günceller
+  #    ve yanındaki `# vX.Y.Z` yorumunu da tazeler.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "05:00"
+      timezone: Europe/Istanbul
+    open-pull-requests-limit: 3
+    groups:
+      actions:
+        patterns:
+          - "*"

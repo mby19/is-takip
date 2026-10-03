@@ -145,25 +145,23 @@ export function AuditLogView({ onBack }: { onBack: () => void }) {
           <button
             onClick={onBack}
             aria-label="Geri"
-            className="w-10 h-10 rounded-control bg-muted/60 flex items-center justify-center active:scale-90 transition-all"
+            className="tap-target rounded-control bg-muted/60 flex items-center justify-center active:scale-90 transition-all"
           >
             <ArrowLeft className="w-5 h-5" />
           </button>
           <div>
             <h1 className="text-[17px] font-semibold tracking-tight">İşlem geçmişi</h1>
-            <p className="text-[11px] text-muted-foreground">
-              {logs.length} kayıt · son 12 ay saklanır
-            </p>
+            <p className="text-[11px] text-muted-foreground">{logs.length} kayıt · hepsi kalıcı</p>
           </div>
         </div>
 
-        <div className="flex gap-1.5 overflow-x-auto no-scrollbar -mx-1 px-1">
+        <div className="h-scroll-touch flex gap-1.5 overflow-x-auto no-scrollbar -mx-1 px-1">
           {FILTERS.map((f) => (
             <button
               key={f.id}
               onClick={() => setFilter(f.id)}
               aria-pressed={filter === f.id}
-              className={`shrink-0 h-8 px-3 rounded-full text-[12px] font-medium transition-all active:scale-95 ${
+              className={`tap-target shrink-0 px-3 rounded-full text-[12px] font-medium transition-all active:scale-95 ${
                 filter === f.id
                   ? "bg-primary text-primary-foreground"
                   : "bg-muted/60 text-muted-foreground hover:text-foreground"
@@ -254,7 +252,7 @@ export function AuditLogView({ onBack }: { onBack: () => void }) {
                       {view.details.length > 0 && (
                         <button
                           onClick={() => toggle(log.id)}
-                          className="text-[11px] text-muted-foreground hover:text-foreground flex items-center gap-1 transition-colors"
+                          className="tap-target -my-1 px-1 text-[11px] text-muted-foreground hover:text-foreground flex items-center gap-1 transition-colors"
                         >
                           {open ? "Gizle" : `Ayrıntı (${view.details.length})`}
                           <ChevronDown
@@ -267,7 +265,7 @@ export function AuditLogView({ onBack }: { onBack: () => void }) {
                         <button
                           onClick={() => setConfirmLog(log)}
                           disabled={revertingId === log.id}
-                          className="text-[11px] text-muted-foreground hover:text-bad flex items-center gap-1 transition-colors disabled:opacity-50"
+                          className="tap-target -my-1 px-1 text-[11px] text-muted-foreground hover:text-bad flex items-center gap-1 transition-colors disabled:opacity-50"
                         >
                           {revertingId === log.id ? (
                             <Loader2 className="w-3 h-3 animate-spin" />
@@ -304,6 +302,11 @@ export function AuditLogView({ onBack }: { onBack: () => void }) {
             </p>
           </div>
         )}
+        <p className="px-4 py-3 text-[11px] leading-relaxed text-muted-foreground/70 border-t border-border/40">
+          Denetim kayıtları artık otomatik silinmez — geri alma geçmişi kalıcıdır. Veritabanı ve
+          yedek dosyası zamanla büyüyebilir; eski kayıtları elle temizlemek istersen
+          Ayarlar&apos;tan yedek alabilirsin.
+        </p>
       </div>
 
       {/* Geri alma onayı */}

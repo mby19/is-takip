@@ -114,7 +114,17 @@ export function useReminders({ ready, onOpenToday }: UseRemindersOptions): void 
   useEffect(() => {
     if (!ready) return;
 
-    void syncReminders();
+    void syncReminders().then((result) => {
+      // Kurulum sessizce başarısız olursa kullanıcı bunu bilmeli; bir sonraki
+      // denemede tekrar kurulacak (imza sıfırlandığı için).
+      if (result === "izin-yok") {
+        useToastStore.getState().addToast("Bildirim izni kapalı, hatırlatma kurulamadı.", "error");
+      } else if (result === "hata") {
+        useToastStore
+          .getState()
+          .addToast("Hatırlatma kurulamadı, bir sonraki açılışta tekrar denenecek.", "error");
+      }
+    });
     if (!enabled) return;
 
     let timer: ReturnType<typeof setTimeout> | undefined;

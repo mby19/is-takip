@@ -21,7 +21,7 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; img-src 'self' data: asset: http://asset.localhost; font-src 'self' data:; connect-src 'self' ipc: http://ipc.localhost"
+      "csp": "default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; img-src 'self' data: asset: http://asset.localhost; font-src 'self' data:; connect-src 'self' ipc: http://ipc.localhost https://*.ingest.sentry.io https://*.sentry.io"
     }
   },
   "bundle": {
@@ -34,6 +34,13 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
+    "macOS": {
+      "minimumSystemVersion": "11.0"
+    },
+    "iOS": {
+      "minimumSystemVersion": "15.0",
+      "template": "src-tauri/apple-project.yml"
+    },
     "copyright": "© 2026 İş Takip",
     "category": "Business",
     "shortDescription": "İnşaat sahası personel takip uygulaması",

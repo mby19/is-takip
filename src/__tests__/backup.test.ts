@@ -72,9 +72,28 @@ describe("validateBackup", () => {
         { worker_id: 1, valid_from: "2026-03-01", daily_wage: 750, worker_type: "GUNLUK" },
       ],
     });
+    // v1-v3 yedeğinde `id` yoktur; `null` gelir ve geri yüklemede SQLite
+    // yeni değer atar (bkz. `worker_rate_history` id'si neden yedekte).
     expect(result.rates).toEqual([
-      { worker_id: 1, valid_from: "2026-03-01", daily_wage: 750, worker_type: "GUNLUK" },
+      {
+        id: null,
+        worker_id: 1,
+        valid_from: "2026-03-01",
+        daily_wage: 750,
+        worker_type: "GUNLUK",
+      },
     ]);
+  });
+
+  it("v4 yedeğindeki ücret geçmişi id'sini KORUR (denetim kaydı eşleşmesi)", () => {
+    const result = validateBackup({
+      ...v1Backup,
+      version: BACKUP_FORMAT_VERSION,
+      worker_rate_history: [
+        { id: 42, worker_id: 1, valid_from: "2026-03-01", daily_wage: 750, worker_type: "GUNLUK" },
+      ],
+    });
+    expect(result.rates[0]).toMatchObject({ id: 42, worker_id: 1, daily_wage: 750 });
   });
 
   it("sürüm alanı yoksa v1 varsayar", () => {

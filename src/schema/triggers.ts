@@ -9,7 +9,7 @@
  * Tanımların sürümü. Değiştirdiğinizde bu sayıyı artırın — `db.ts` yalnızca
  * sürüm değiştiğinde tetikleyicileri yeniden kurar.
  */
-export const TRIGGER_SCHEMA_VERSION = 2;
+export const TRIGGER_SCHEMA_VERSION = 3;
 
 export const DROP_TRIGGERS = [
   "DROP TRIGGER IF EXISTS attendance_insert_log;",
@@ -24,6 +24,9 @@ export const DROP_TRIGGERS = [
   "DROP TRIGGER IF EXISTS workers_insert_log;",
   "DROP TRIGGER IF EXISTS workers_update_log;",
   "DROP TRIGGER IF EXISTS workers_delete_log;",
+  "DROP TRIGGER IF EXISTS worker_rate_history_insert_log;",
+  "DROP TRIGGER IF EXISTS worker_rate_history_update_log;",
+  "DROP TRIGGER IF EXISTS worker_rate_history_delete_log;",
 ];
 
 /** O güne ait tüm personelin durumunu JSON dizisi olarak toplayan alt sorgu. */
@@ -51,7 +54,11 @@ export const CREATE_WORKERS_INSERT_LOG = `
 
 export const CREATE_WORKERS_UPDATE_LOG = `
   CREATE TRIGGER IF NOT EXISTS workers_update_log AFTER UPDATE ON workers
-  WHEN OLD.name <> NEW.name OR OLD.daily_wage <> NEW.daily_wage OR OLD.worker_type <> NEW.worker_type OR OLD.is_active <> NEW.is_active
+  -- IS NOT şart: is_active nullable'dır. "<>" karşılaştırması NULL
+  -- ürettiğinde WHEN yanlış (NULL) değerlenir, yani arşivleme (aktif →
+  -- arşiv) hiç denetlenmez. IS NOT NULL'a güvenlidir: bir taraf NULL,
+  -- diğeri değilse true döner.
+  WHEN OLD.name IS NOT NEW.name OR OLD.daily_wage IS NOT NEW.daily_wage OR OLD.worker_type IS NOT NEW.worker_type OR OLD.is_active IS NOT NEW.is_active
   BEGIN
     INSERT INTO audit_logs (action_type, entity_table, record_id, old_data, new_data)
     VALUES ('UPDATE', 'workers', NEW.id,
@@ -204,6 +211,55 @@ export const CREATE_PAYMENTS_DELETE_LOG = `
   END;
 `;
 
+/**
+ * Ücret geçmişi denetimi.
+ *
+ * Neden şart: `resolveWorkerRate` geçmiş kaydı `workers.daily_wage`'e tercih
+ * eder. Yani `workers` tablosu doğru geri alınsa bile `worker_rate_history`
+ * satırı yeni ücretle kalır ve ekranda 1000 görünürken ocak ayı 1500'ten
+ * hesaplanır — sessiz yanlış maaş. Bu tablo denetlenmediği için bu tabloya
+ * dokunan hiçbir değişiklik geri alınamıyordu.
+ */
+export const CREATE_WORKER_RATE_HISTORY_INSERT_LOG = `
+  CREATE TRIGGER IF NOT EXISTS worker_rate_history_insert_log AFTER INSERT ON worker_rate_history
+  BEGIN
+    INSERT INTO audit_logs (action_type, entity_table, record_id, new_data)
+    VALUES ('INSERT', 'worker_rate_history', NEW.id, json_object(
+      'worker_id', NEW.worker_id,
+      'worker_name', COALESCE((SELECT name FROM workers WHERE id = NEW.worker_id), 'Bilinmeyen'),
+      'valid_from', NEW.valid_from,
+      'wage', NEW.daily_wage,
+      'type', NEW.worker_type
+    ));
+  END;
+`;
+
+export const CREATE_WORKER_RATE_HISTORY_UPDATE_LOG = `
+  CREATE TRIGGER IF NOT EXISTS worker_rate_history_update_log AFTER UPDATE ON worker_rate_history
+  WHEN OLD.daily_wage IS NOT NEW.daily_wage OR OLD.worker_type IS NOT NEW.worker_type OR OLD.valid_from IS NOT NEW.valid_from
+  BEGIN
+    INSERT INTO audit_logs (action_type, entity_table, record_id, old_data, new_data)
+    VALUES ('UPDATE', 'worker_rate_history', NEW.id,
+      json_object('worker_id', OLD.worker_id, 'worker_name', COALESCE((SELECT name FROM workers WHERE id = OLD.worker_id), 'Bilinmeyen'), 'valid_from', OLD.valid_from, 'wage', OLD.daily_wage, 'type', OLD.worker_type),
+      json_object('worker_id', NEW.worker_id, 'worker_name', COALESCE((SELECT name FROM workers WHERE id = NEW.worker_id), 'Bilinmeyen'), 'valid_from', NEW.valid_from, 'wage', NEW.daily_wage, 'type', NEW.worker_type)
+    );
+  END;
+`;
+
+export const CREATE_WORKER_RATE_HISTORY_DELETE_LOG = `
+  CREATE TRIGGER IF NOT EXISTS worker_rate_history_delete_log AFTER DELETE ON worker_rate_history
+  BEGIN
+    INSERT INTO audit_logs (action_type, entity_table, record_id, old_data)
+    VALUES ('DELETE', 'worker_rate_history', OLD.id, json_object(
+      'worker_id', OLD.worker_id,
+      'worker_name', COALESCE((SELECT name FROM workers WHERE id = OLD.worker_id), 'Bilinmeyen'),
+      'valid_from', OLD.valid_from,
+      'wage', OLD.daily_wage,
+      'type', OLD.worker_type
+    ));
+  END;
+`;
+
 /** Kurulum sırası: `db.ts` ve `backup.ts` bu listeyi kullanır. */
 export const CREATE_TRIGGERS = [
   CREATE_WORKERS_INSERT_LOG,
@@ -218,4 +274,7 @@ export const CREATE_TRIGGERS = [
   CREATE_PAYMENTS_INSERT_LOG,
   CREATE_PAYMENTS_UPDATE_LOG,
   CREATE_PAYMENTS_DELETE_LOG,
+  CREATE_WORKER_RATE_HISTORY_INSERT_LOG,
+  CREATE_WORKER_RATE_HISTORY_UPDATE_LOG,
+  CREATE_WORKER_RATE_HISTORY_DELETE_LOG,
 ];

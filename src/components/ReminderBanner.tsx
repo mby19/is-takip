@@ -3,11 +3,13 @@ import { BellRing, X } from "lucide-react";
 import { fetchQuery } from "../lib/db";
 import { todayKey } from "../lib/period";
 import { markTodayFull } from "../lib/quickAttendance";
+import { hasAllAttendanceRecorded } from "../lib/attendanceCoverage";
 import { useAttendanceStore } from "../stores/attendanceStore";
 import { useReminderStore } from "../stores/reminderStore";
 import { isDateInClosedPeriod } from "../stores/periodStore";
 import { useToastStore } from "../stores/toastStore";
 import { syncReminders } from "../lib/reminder";
+import type { CoverageAttendance, CoverageWorker } from "../lib/attendanceCoverage";
 
 /**
  * «Bugünün puantajı girilmedi» uyarısı.
@@ -53,11 +55,16 @@ export function ReminderBanner({ onOpenToday }: ReminderBannerProps) {
       try {
         const date = todayKey();
         if (isDateInClosedPeriod(date)) return;
-        const rows = await fetchQuery<{ n: number }>(
-          "SELECT COUNT(*) AS n FROM attendance WHERE date = ?",
-          [date],
-        );
-        if (alive) setIsEmpty(Number(rows[0]?.n ?? 0) === 0);
+        // "Bir kayıt var mı" yetmez: 40 kişilik ekipte tek kişi işaretlendiğinde
+        // gün dolmuş sayılır ve kalan 39 kişinin puantajı sessizce kaybolurdu.
+        // Ölçüt, AKTİF çalışanların tamamı için kayıt bulunmasıdır.
+        const [workers, rows] = await Promise.all([
+          fetchQuery<CoverageWorker>("SELECT id, is_active FROM workers"),
+          fetchQuery<CoverageAttendance>("SELECT worker_id, date FROM attendance WHERE date = ?", [
+            date,
+          ]),
+        ]);
+        if (alive) setIsEmpty(!hasAllAttendanceRecorded(workers, rows, date));
       } catch {
         // Sayım okunamazsa uyarı gösterilmez; sessizce geçilir.
       }
@@ -92,7 +99,7 @@ export function ReminderBanner({ onOpenToday }: ReminderBannerProps) {
     <div className="mx-3 mb-2 p-3 rounded-card border border-warn/30 bg-warn-soft flex items-start gap-3 animate-pop-in">
       <BellRing className="w-4 h-4 text-warn shrink-0 mt-0.5" />
       <div className="min-w-0 flex-1">
-        <p className="text-xs font-semibold text-warn">Bugünün puantajı girilmedi</p>
+        <p className="text-xs font-semibold text-warn">Bugünün puantajı eksik</p>
         <div className="flex gap-2 mt-2">
           <button
             onClick={() => void fillToday()}

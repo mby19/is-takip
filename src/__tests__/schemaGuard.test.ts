@@ -40,6 +40,10 @@ function legacyDb(): DatabaseSync {
       id INTEGER PRIMARY KEY AUTOINCREMENT, action_type TEXT NOT NULL, entity_table TEXT NOT NULL,
       record_id INTEGER NOT NULL, old_data TEXT, new_data TEXT,
       created_at DATETIME DEFAULT (DATETIME('now','localtime')));
+    CREATE TABLE worker_rate_history (
+      id INTEGER PRIMARY KEY AUTOINCREMENT, worker_id INTEGER NOT NULL,
+      valid_from TEXT NOT NULL, daily_wage REAL NOT NULL, worker_type TEXT NOT NULL,
+      FOREIGN KEY(worker_id) REFERENCES workers(id) ON DELETE CASCADE);
     INSERT INTO workers (name, daily_wage, worker_type) VALUES ('Ahmet Yılmaz', 900, 'GUNLUK');
     INSERT INTO attendance (worker_id, date, status)
       VALUES (1,'2026-09-01','FULL'), (1,'2026-09-02','HALF'), (1,'2026-09-03','ABSENT');

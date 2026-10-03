@@ -1,0 +1,21 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/OWNER/REPO/blob/main/SECURITY.md
+    about: |
+      ⚠️ Do NOT open a public issue for a security vulnerability.
+
+      Report it privately through the channel described in `SECURITY.md`. A public
+      issue makes the vulnerability visible to everyone before a fix exists.
+
+  - name: Question or usage help
+    url: https://github.com/OWNER/REPO/discussions
+    about: Ask how to use the app, or how something behaves.
+
+  - name: Known open issues
+    url: https://github.com/OWNER/REPO/blob/main/SECURITY_REPORT.md
+    about: Check the security report first — the issue may already be known.
+
+  - name: Contributing guide
+    url: https://github.com/OWNER/REPO/blob/main/CONTRIBUTING.md
+    about: Layer rules, the single source of truth for money, and the test gates.

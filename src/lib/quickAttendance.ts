@@ -22,12 +22,17 @@ export interface QuickFillResult {
  *
  * Mevcut kayıtlara dokunulmaz: kullanıcı birine bilerek «yok» demişse,
  * toplu doldurma bunu ezmemeli.
+ *
+ * Tüm yazma TEK transaction içinde geçer (`markAttendanceMany` →
+ * `attendanceRepository.upsertMany`). Sıralı tekil yazmalarda 12. çalışanda
+ * hata oluştuğunda 12 kişi tam gün, 38 kişi boş kalıyordu — üstelik kayıt
+ * artık "var" göründüğü için o gün için hatırlatma da gelmiyordu.
  */
 export async function markTodayFull(): Promise<QuickFillResult> {
   const date = todayKey();
   if (isDateInClosedPeriod(date)) throw new ClosedPeriodError(date);
 
-  const { fetchAttendanceByDate, markAttendance } = useAttendanceStore.getState();
+  const { fetchAttendanceByDate, markAttendanceMany } = useAttendanceStore.getState();
   await fetchAttendanceByDate(date);
 
   const recorded = new Set(
@@ -41,15 +46,11 @@ export async function markTodayFull(): Promise<QuickFillResult> {
     .getState()
     .workers.filter((w) => w.is_active && !recorded.has(w.id));
 
-  for (const worker of targets) {
-    await markAttendance(worker.id, date, "FULL");
-  }
+  if (targets.length === 0) return { marked: 0, skipped: recorded.size };
 
-  return { marked: targets.length, skipped: recorded.size };
-}
+  const { written } = await markAttendanceMany(
+    targets.map((worker) => ({ workerId: worker.id, date, status: "FULL" as const })),
+  );
 
-/** Bugün hiç puantaj girilmemiş mi? Hatırlatma uyarısı buna bakar. */
-export function isTodayEmpty(): boolean {
-  const date = todayKey();
-  return !useAttendanceStore.getState().attendances.some((a) => String(a.date).trim() === date);
+  return { marked: written, skipped: recorded.size };
 }

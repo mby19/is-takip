@@ -1,9 +1,28 @@
 import { fetchQuery, executeQuery } from "../lib/db";
+import { compareTurkish } from "../utils/turkishCollation";
 import type { Worker, WorkerType } from "../types";
 
 export const workerRepository = {
-  findAll: (): Promise<Worker[]> =>
-    fetchQuery<Worker>("SELECT * FROM workers ORDER BY is_active DESC, name ASC"),
+  /**
+   * Tüm çalışanlar: aktifler önce, sonra Türkçe alfabe sırasında isim.
+   *
+   * İsim sıralaması bilinçli olarak SQL'e taşınmıyor. `tauri-plugin-sql`
+   * (2.3.2) yalnız `load`/`close`/`execute`/`select` komutlarını açar; özel
+   * bir SQLite collation kaydedilemez. SQL'de kalan `ORDER BY name ASC` ise
+   * `BINARY` collation ile "Ç", "Ş", "Ğ" harflerini `Z`'den sonra atardı.
+   * Liste zaten bellekte geldiği için (60–100 kişi) karşılaştırma JS'te
+   * yapılır.
+   *
+   * Karşılaştırıcı İKİ anahtarlıdır: önce `is_active`, sonra isim. Yalnız
+   * isme göre sıralamak SQL'den gelen grup sırasını bozup pasif çalışanları
+   * araya karıştırıyordu — ekranda "pasif" filtresi yanlış satırları gizler.
+   */
+  findAll: async (): Promise<Worker[]> => {
+    const rows = await fetchQuery<Worker>("SELECT * FROM workers");
+    return rows.sort(
+      (a, b) => Number(b.is_active) - Number(a.is_active) || compareTurkish(a.name, b.name),
+    );
+  },
 
   create: (name: string, daily_wage: number, worker_type: WorkerType) =>
     executeQuery(

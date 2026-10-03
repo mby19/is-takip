@@ -1,4 +1,20 @@
 <?xml version="1.0" encoding="utf-8"?>
+
+<!--
+  ELLE KULLANICIYA AİT: Bu dosya Tauri v2 `tauri android init` tarafından üretilir.
+
+  `tauri android init` MEVCUT dosyaların üzerine yazmaz (yalnız eksik olanları oluşturur),
+  ancak `gen/android` klasörü silinip yeniden üretildiğinde aşağıdaki `allowBackup`
+  ayarları kaybolur ve maaş/ücret verisi yeniden Google yedeğine açılır.
+
+  Kalıcılık notu: Tauri v2 `tauri.conf.json` yapılandırmasında Android manifest'i
+  değiştirecek bir seçenek YOKTUR (bkz. @tauri-apps/cli config.schema.json — hiçbir
+  `backup` / `allowBackup` alanı yoktur). Bu yüzden kalıcı çözüm iki katmanlıdır:
+    1. Buradaki düzenlemelerin git'te tutulması (bu dosya izleniyor).
+    2. `src/__tests__/androidBackup.test.ts` regresyon testinin, bu satırlar
+       silinirse/geri alınırsa KIRMIZI olması. Yeniden üretim sonrası
+       `npx vitest run src/__tests__/androidBackup.test.ts` çalıştır.
+-->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
@@ -12,7 +28,10 @@
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
         android:theme="@style/Theme.is_takip"
-        android:usesCleartextTraffic="${usesCleartextTraffic}">
+        android:usesCleartextTraffic="${usesCleartextTraffic}"
+        android:allowBackup="false"
+        android:fullBackupContent="false"
+        android:dataExtractionRules="@xml/data_extraction_rules">
         <activity
             android:configChanges="orientation|keyboardHidden|keyboard|screenSize|locale|smallestScreenSize|screenLayout|uiMode"
             android:launchMode="singleTask"

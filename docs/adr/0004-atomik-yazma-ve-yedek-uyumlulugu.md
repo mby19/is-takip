@@ -86,3 +86,28 @@ Geri alma işleminin kendisi `action_type = 'REVERT'` olarak ayrıca kaydedilir.
 - `src/lib/backup.ts` — doğrulama, sürüm kontrolü, otomatik yedek
 - `src/stores/revertStrategies.ts` — geri alma ifadelerini üretir (yazmaz)
 - `src-tauri/src/db.rs` — migration 11
+
+---
+
+## Güncelleme (2026-10-01) — Yedek formatı sürümü 4'e çıktı
+
+ADR'lar değiştirilmez; yalnızca not düşülür. Madde 4'ün **sayısı** değişti,
+kuralı değil: `BACKUP_FORMAT_VERSION` artık **4**. Sürüm 2'den 4'e giden yol:
+
+- **Sürüm 3** — `audit_logs.reverted_at` eklendi. "Temiz revert kaydı siler"
+  yerine kayıt damgalanıyor (bkz. [ADR-0002](0002-ikili-denetim-sistemi.md)).
+- **Sürüm 4** — `worker_rate_history.id` eklendi. Tetikleyiciler
+  `audit_logs.record_id` alanına bu tablonun `id` değerini yazar ve
+  `revertStrategies` geri almayı bu id üzerinden yapar. id yedeğe girmezse geri
+  yüklemede yeniden atanır; kullanıcı "Geri al" dediğinde işlem **sessizce**
+  yanlış satıra düşer ya da hiçbir satıra düşmez. Bu, sessiz yanlış
+  maaştır. Alan opsiyoneldir: v1-v3 yedeklerinde yoktur ve o yedeklerde eski
+  davranış sürer.
+
+Madde 4'ün **değişmez kuralı aynen geçerlidir:** mevcut alan adları asla
+değiştirilmez veya kaldırılmaz, yalnızca yeni alan eklenir.
+
+**Ek not — transaction hatası ve bağlantı havuzu:** Yedek/geri yükleme tek
+transaction'da gider ve `BEGIN IMMEDIATE` kullanır. Hata durumunda bağlantı
+havuzu tamamen yenilenir (`db.ts`), çünkü kirli bağlantının hangisi olduğu
+bilinmez — ayrıntı için bkz. `db.ts` `recyclePoolAfterFailure`.

@@ -9,6 +9,9 @@ import { test, expect } from "../support/tauriMock";
 const addWorker = async (page: import("@playwright/test").Page, name: string, wage = "600") => {
   await page.getByRole("button", { name: "Kişiler" }).click();
   await page.getByRole("button", { name: /Yeni Kişi Ekle/ }).click();
+  // Dialog'ın mount olmasını bekle: tıklamadan hemen sonra input'a yazmak,
+  // henüz render edilmemiş bir ağaca yazma denemesi olurdu.
+  await expect(page.getByPlaceholder("Örn: Ahmet Yılmaz")).toBeVisible();
   await page.getByPlaceholder("Örn: Ahmet Yılmaz").fill(name);
   await page.getByLabel("Günlük Yevmiye (₺)").fill(wage);
   await page.getByRole("button", { name: "Kaydet" }).click();

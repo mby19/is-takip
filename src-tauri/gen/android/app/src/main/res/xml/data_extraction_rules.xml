@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Android 12+ (API 31) yedeğe alma kuralları. `AndroidManifest.xml` içindeki
+  `android:dataExtractionRules="@xml/data_extraction_rules"` bu dosyaya bağlanır.
+
+  İki kanal da kapatılır:
+    - cloud-backup : Google Backup / cloud yedekleme
+    - device-transfer : cihazdan cihaza aktarım (yeni telefon, geri yükleme)
+
+  Uygulamanın tüm verisi tek bir SQLite dosyasındadır (maaş, ücret, audit_logs),
+  bu yüzden hiçbir domain dışarıda bırakılmıyor: dokuzunun tamamı hariç tutulur.
+  `device_*` domainleri API 24+ cihaz korumalı depolama içindir.
+
+  Bu dosya Tauri v2 `tauri android init` şablonundan gelmez, `gen/android`
+  silinip yeniden üretilirse kaybolur. Aynı şekilde AndroidManifest.xml'deki
+  referans da kaybolur — `src/__tests__/androidBackup.test.ts` ikisini birlikte kontrol eder.
+-->
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="root" />
+        <exclude domain="file" />
+        <exclude domain="database" />
+        <exclude domain="sharedpref" />
+        <exclude domain="external" />
+        <exclude domain="device_root" />
+        <exclude domain="device_file" />
+        <exclude domain="device_database" />
+        <exclude domain="device_sharedpref" />
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="root" />
+        <exclude domain="file" />
+        <exclude domain="database" />
+        <exclude domain="sharedpref" />
+        <exclude domain="external" />
+        <exclude domain="device_root" />
+        <exclude domain="device_file" />
+        <exclude domain="device_database" />
+        <exclude domain="device_sharedpref" />
+    </device-transfer>
+</data-extraction-rules>

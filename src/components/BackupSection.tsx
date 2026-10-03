@@ -485,8 +485,8 @@ export function BackupSection() {
                         Yedekleme dosyası bulunamadı
                       </p>
                       <p className="text-[10px] text-muted-foreground/60 max-w-60 mx-auto leading-relaxed">
-                        İndirilenler klasöründe otomatik yedek dosyası bulunamadı veya klasör erişim
-                        izni yok.
+                        İndirilenler klasöründe yedek dosyası bulunamadı — ne sizin aldığınız ne de
+                        otomatik güvenlik yedeği. Klasöre erişim izni de olabilir.
                       </p>
                     </div>
 
@@ -525,11 +525,23 @@ export function BackupSection() {
                             </div>
                             <div className="flex-1 min-w-0 flex items-center justify-between gap-2">
                               <div>
-                                <p className="text-[14px] font-semibold truncate">
-                                  {extractDateFromFileName(file.name)}
+                                <p className="flex items-center gap-1.5">
+                                  <span className="text-[14px] font-semibold truncate">
+                                    {extractDateFromFileName(file.name)}
+                                  </span>
+                                  {/* Otomatik güvenlik yedeği kullanıcının kendi
+                                      yedeğiyle aynı listede aynı görünürdü. */}
+                                  {file.isAutomatic && (
+                                    <span className="shrink-0 px-1.5 py-0.5 rounded bg-warn-soft border border-amber-300 dark:border-amber-500/40 text-warn text-[9px] font-bold uppercase tracking-wide">
+                                      Otomatik
+                                    </span>
+                                  )}
                                 </p>
                                 <p className="text-[10px] text-muted-foreground font-bold mt-0.5">
-                                  {formatFileSize(file.size)} • {file.name}
+                                  {formatFileSize(file.size)} •{" "}
+                                  {file.isAutomatic
+                                    ? "Geri yükleme öncesi güvenlik yedeği"
+                                    : "Yedek"}
                                 </p>
                               </div>
 

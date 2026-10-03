@@ -15,9 +15,17 @@ export const DEFAULT_REMINDER_TIME = "18:00";
 
 const TIME_PATTERN = /^([01]\d|2[0-3]):[0-5]\d$/;
 
-/** Geçersiz/eksik değerler varsayılana düşer; kayıtlı ayar hiç bozulmaz. */
+/**
+ * Yalnızca okuma yolunda kullanılır: localStorage'daki bozuk/eksik değer
+ * varsayılana döner. Yazma yolunda (setTime) geçersiz girdi reddedilir —
+ * kullanıcının geçici olarak geçersiz yazdığı saat kalıcı olarak 18:00'e
+ * dönüşüyordu.
+ */
 export const normalizeReminderTime = (value: string | null | undefined): string =>
   TIME_PATTERN.test(value ?? "") ? (value as string) : DEFAULT_REMINDER_TIME;
+
+/** Geçersiz saat girdisi — kullanıcıya gösterilecek mesajla birlikte. */
+export const INVALID_TIME_MESSAGE = "Geçerli bir saat gir (SS:DD). Ayar değiştirilmedi.";
 
 const read = <T>(fn: () => T, fallback: T): T => {
   try {
@@ -32,7 +40,7 @@ interface ReminderState {
   enabled: boolean;
   time: string;
   setEnabled: (enabled: boolean) => void;
-  setTime: (time: string) => void;
+  setTime: (time: string) => boolean;
 }
 
 export const useReminderStore = create<ReminderState>((set) => ({
@@ -44,9 +52,16 @@ export const useReminderStore = create<ReminderState>((set) => ({
     set({ enabled });
   },
 
+  /**
+   * Geçersiz girdi reddedilir: eski değer korunur ve `false` döner, çağıran
+   * kullanıcıya bildirir. Sessizce varsayılana yazmak, kullanıcının seçtiği
+   * saati onaylamasına rağmen başka bir saatte hatırlatma kurulmasına yol
+   * açıyordu.
+   */
   setTime: (time) => {
-    const normalized = normalizeReminderTime(time);
-    read(() => localStorage.setItem(TIME_KEY, normalized), undefined);
-    set({ time: normalized });
+    if (!TIME_PATTERN.test(time)) return false;
+    read(() => localStorage.setItem(TIME_KEY, time), undefined);
+    set({ time });
+    return true;
   },
 }));
