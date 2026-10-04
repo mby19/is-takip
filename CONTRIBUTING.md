@@ -97,7 +97,7 @@ Vitest for unit and component tests, Playwright for e2e (`e2e/`).
 
 Architectural decisions are ADRs in [`docs/adr/`](docs/adr/), numbered and immutable once merged —
 a new decision supersedes an old one rather than editing it. Decisions not yet made are tracked in
-[`docs/karar-bekleyenler.md`](docs/karar-bekleyenler.md). Touching a layer boundary, the schema, the
+GitHub Issues. Touching a layer boundary, the schema, the
 audit system, or the money math? Write or supersede an ADR in the same PR.
 
 ## Reporting security issues

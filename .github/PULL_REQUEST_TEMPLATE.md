@@ -52,7 +52,7 @@ npm run test:e2e
 - [ ] Backup / export format changed (migration plan included).
 - [ ] A published ADR is now wrong — append an "Update (date)" note; do not rewrite the original.
 
-Open/undecided design questions go to `docs/karar-bekleyenler.md`.
+Open/undecided design questions go to GitHub Discussions or Issues.
 
 </details>
 

@@ -7,8 +7,8 @@ body:
     attributes:
       value: |
         Features are evaluated against the domain model in `CONTEXT.md` and the
-        open decisions in `docs/karar-bekleyenler.md`. Check whether the idea is
-        already listed there before opening a new issue.
+        existing architecture decisions in `docs/adr/`. Check whether the idea is
+        already addressed there before opening a new issue.
 
   - type: textarea
     id: problem
@@ -56,7 +56,7 @@ body:
       label: Architectural implications
       description: |
         Tick what applies so the triage can tell whether an ADR is needed. See
-        `docs/adr/` and `docs/karar-bekleyenler.md`.
+        `docs/adr/`.
       options:
         - label: This would change the money calculation (`earningsCalculator.ts` / `calculations.ts`) — ADR required.
         - label: This would add or change a database table, column or trigger — ADR required.
