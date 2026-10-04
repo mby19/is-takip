@@ -2,6 +2,9 @@
   "name": "is-takip",
   "private": true,
   "version": "0.1.0",
+  "description": "Attendance, production and payroll tracking application for construction & manufacturing crews",
+  "author": "mby19",
+  "license": "MIT",
   "type": "module",
   "scripts": {
     "dev": "vite",

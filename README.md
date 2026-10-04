@@ -1,5 +1,7 @@
 <div align="center">
 
+<img src="public/app-icon.png" width="128" height="128" alt="İş Takip Icon" style="border-radius: 22%;" />
+
 # İş Takip
 
 **Attendance, production and payroll tracking for construction site crews — one Tauri codebase, five platforms.**
@@ -37,9 +39,9 @@ output of the Tauri project. The reasoning behind that decision is written up in
 
 - **Crew management** — daily-paid and flat-rate workers, distinguished by colour
   and short label.
-- **Daily attendance** — full day, half day, absent, holiday; bulk entry for a
+- **Daily attendance** — full day, half day, absent; bulk entry for a
   whole day at once.
-- **Production metrics** — daily pallet counts, revenue and expense entry.
+- **Production metrics** — daily production counts, revenue and expense entry.
 - **Payment tracking** — per-worker payment records with running balance.
 - **Month-end summary** — business profit, per-worker earnings breakdown and an
   all-time view.
@@ -76,10 +78,6 @@ There is **no charting library**: the daily earnings chart on a worker's detail
 view is hand-drawn with `<svg>` inside `WorkerDetailView`.
 
 ## Screenshots
-
-<!-- TODO: the screenshots below are captured by the Playwright e2e suite and
-     committed as-is. Replace them with hand-curated captures (and a matching
-     set of light-theme shots) before the first public release. -->
 
 ### Daily attendance
 

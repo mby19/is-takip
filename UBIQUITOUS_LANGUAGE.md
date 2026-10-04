@@ -10,13 +10,13 @@
 
 ## Çalışma Durumu
 
-| Terim                         | Tanım                                                                                    | Kaçınılması Gerekenler |
-| ----------------------------- | ---------------------------------------------------------------------------------------- | ---------------------- |
-| **Devam Durumu (Attendance)** | Bir çalışanın belirli bir tarihteki çalışma durumu.                                      | Yoklama, imza, katılım |
-| **Tam Gün (FULL)**            | Çalışanın tüm gün çalıştığı devam durumu.                                                | Mevcut, var            |
-| **Yarım Gün (HALF)**          | Çalışanın yarım gün çalıştığı devam durumu.                                              | Eksik gün              |
-| **Gelmedi (ABSENT)**          | Çalışanın o gün hiç gelmediği devam durumu.                                              | Devamsız, yok          |
-| **Tatil (HOLIDAY)**           | Resmî tatil veya iş tatili günü. Tatil günlerinde üretim ve kazanç hesaplaması yapılmaz. | Bayram, izin           |
+| Terim                         | Tanım                                                                | Kaçınılması Gerekenler |
+| ----------------------------- | -------------------------------------------------------------------- | ---------------------- |
+| **Devam Durumu (Attendance)** | Bir çalışanın belirli bir tarihteki çalışma durumu.                  | Yoklama, imza, katılım |
+| **Tam Gün (FULL)**            | Çalışanın tüm gün çalıştığı devam durumu.                            | Mevcut, var            |
+| **Yarım Gün (HALF)**          | Çalışanın yarım gün çalıştığı devam durumu.                          | Eksik gün              |
+| **Gelmedi (ABSENT)**          | Çalışanın o gün hiç gelmediği devam durumu.                          | Devamsız, yok          |
+| **Tatil (HOLIDAY)**           | Eski sistem kaydı; güncel sistemde `ABSENT` (Yok) olarak ele alınır. | Bayram, izin           |
 
 ## Üretim ve Finans
 
@@ -24,7 +24,7 @@
 | -------------------------------- | ------------------------------------------------------------------------------------------------------------ | ----------------------------------- |
 | **Yevmiye (Daily Wage)**         | Günlükçü bir çalışanın bir tam gün için aldığı sabit ücret.                                                  | Günlük ücret, maaş                  |
 | **Günlük Metrik (Daily Metric)** | Bir iş gününe ait üretim ve finans verileri.                                                                 | Günlük veri, iş günü kaydı          |
-| **Palet**                        | Üretim miktarını ölçen birim.                                                                                | Adet, ürün sayısı                   |
+| **Üretim / Palet**               | Üretim miktarını ölçen birim.                                                                                | Adet, ürün sayısı                   |
 | **Toplam Kazanç (Total Earned)** | Bir günde elde edilen brüt kazanç.                                                                           | Hasılat, gelir, ciro                |
 | **Ek Gider (Extra Expense)**     | Günlük üretimle ilgili ek harcamalar.                                                                        | Masraf, gider kalemi                |
 | **Net Kâr Havuzu**               | Günlük kazançtan giderler ve günlükçü yevmiyeleri düşüldükten sonra ortaklar arasında paylaştırılacak tutar. | Kâr, havuz                          |

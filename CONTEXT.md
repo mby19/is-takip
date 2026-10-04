@@ -12,9 +12,9 @@ Bir inşaat/üretim sahasında çalışan personelin günlük devam durumunu, ü
 | **Ortak (ORTAK)**                 | Günlük sabit ücret yerine, günlük net kârdan (toplam kazanç - giderler - günlükçü ücretleri) pay alan çalışan. Kâr havuzu ortakların ağırlıklı varlığına bölünür.                  |
 | **Günlükçü / Yevmiyeli (GUNLUK)** | Sabit günlük ücretle (daily_wage) çalışan personel. Tam gün = 1x yevmiye, yarım gün = 0.5x yevmiye.                                                                                |
 | **Yevmiye (Daily Wage)**          | Günlükçü bir çalışanın bir tam gün için aldığı sabit ücret.                                                                                                                        |
-| **Devam Durumu (Attendance)**     | Bir çalışanın belirli bir tarihteki çalışma durumu: `FULL` (tam gün), `HALF` (yarım gün), `ABSENT` (gelmedi), `HOLIDAY` (tatil/resmî tatil).                                       |
-| **Günlük Metrik (Daily Metric)**  | Bir iş gününe ait üretim palet sayısı (production_amount), toplam kazanç (total_earned) ve ek giderler (extra_expenses).                                                           |
-| **Palet**                         | Üretim miktarını ölçen birim.                                                                                                                                                      |
+| **Devam Durumu (Attendance)**     | Bir çalışanın belirli bir tarihteki çalışma durumu: `FULL` (tam gün), `HALF` (yarım gün), `ABSENT` (gelmedi). Eski `HOLIDAY` kayıtları `ABSENT` ile birleştirilmiştir.             |
+| **Günlük Metrik (Daily Metric)**  | Bir iş gününe ait üretim miktarı (production_amount), toplam kazanç (total_earned) ve ek giderler (extra_expenses).                                                                |
+| **Üretim / Palet**                | Üretim miktarını ölçen birim.                                                                                                                                                      |
 | **Ödeme (Payment)**               | Çalışana yapılan nakdi ödeme. Kesinleşmiş kazançtan düşülerek bakiye hesaplanır. Kodda tablo ve alan adı da `payments` / `payment` biçimindedir. "Avans" ayrı bir kavram değildir. |
 | **Bakiye (Balance)**              | Çalışanın toplam kazancından yapılan ödemeler düşüldükten sonra kalan net tutar.                                                                                                   |
 | **Denetim Günlüğü (Audit Log)**   | Tüm INSERT/UPDATE/DELETE işlemlerinin otomatik kaydı. SQLite trigger'ları ile tutulur. Geri alma (revert) desteği vardır.                                                          |
@@ -24,7 +24,6 @@ Bir inşaat/üretim sahasında çalışan personelin günlük devam durumunu, ü
 
 - **Ortak kazanç hesabı**: Günlük net kazanç = `total_earned - extra_expenses - (günlükçü toplam yevmiye)`. Kalan "havuz" ortaklar arasında varlık ağırlığına (FULL=1, HALF=0.5) bölünür.
 - **Günlükçü kazanç hesabı**: `daily_wage × weight` (FULL=1, HALF=0.5).
-- **Tatil günlerinde (HOLIDAY)** üretim ve kazanç hesaplaması yapılmaz.
 - **Yazma disiplini (sunucu-gerçeği modeli)**: Bir store yazma yaparken önce veritabanına yazar, sonra veritabanından okuduğu satırı state'e koyar. Tek istisna `attendanceStore` — `markAttendance` / `markAttendanceMany` iyimser (optimistic) güncelleme yapar, yazma başarısız olursa yalnız **etkilenen kayıtları** eski hâline geri alır ve hatayı yukarı fırlatır. Hata yutulmaz; ekranda "kaydedildi" görünen ama kaydedilmemiş veri bırakılmaz.
 
 ## Mimari
