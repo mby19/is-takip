@@ -101,7 +101,6 @@ const stats: WorkerStats = {
   fullDays: 1,
   halfDays: 1,
   absentDays: 0,
-  holidayDays: 0,
 };
 
 const payments: Payment[] = [

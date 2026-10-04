@@ -116,12 +116,14 @@ describe("validateBackup", () => {
     ).toThrow(/bilinmeyen puantaj durumu/i);
   });
 
-  it("HOLIDAY durumunu kabul eder", () => {
+  it("eski yedeklerdeki HOLIDAY durumunu ABSENT'a çevirir", () => {
+    // Tatil kaldırıldı ama eski yedek dosyalarında HOLIDAY kayıtları olabilir.
+    // Yedek reddedilmemeli; kayıt "Yok" (ABSENT) anlamına çevrilmeli.
     const result = validateBackup({
       ...v1Backup,
       attendance: [{ id: 1, worker_id: 1, date: "2026-01-02", status: "HOLIDAY" }],
     });
-    expect(result.attendance[0].status).toBe("HOLIDAY");
+    expect(result.attendance[0].status).toBe("ABSENT");
   });
 
   it("bilinmeyen çalışan tipini reddeder", () => {

@@ -309,11 +309,10 @@ describe("bakiye aritmetiği", () => {
     expect(stats.totalPaid).toBe(350.5);
   });
 
-  it("tatil günü kazanç üretmez ama gün sayılır", () => {
+  it("yok gün kazanç üretmez ama devamsızlık olarak sayılır", () => {
     const w = daily(1, "Ali", 1000);
-    const stats = calculateWorkerStats(w, MAY, [], [att(1, "2026-05-10", "HOLIDAY")], [w], []);
+    const stats = calculateWorkerStats(w, MAY, [], [att(1, "2026-05-10", "ABSENT")], [w], []);
     expect(stats.totalEarnedInMonth).toBe(0);
-    expect(stats.holidayDays).toBe(1);
-    expect(stats.absentDays).toBe(0);
+    expect(stats.absentDays).toBe(1);
   });
 });

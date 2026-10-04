@@ -46,7 +46,16 @@ const MAX_SUPPORTED_VERSION = BACKUP_FORMAT_VERSION;
 // birbirinden ayrılır ve kullanıcının yedeği "yok" görünür.
 export { BACKUP_FILE_PREFIXES, isBackupFileName, isAutomaticBackupFileName } from "./tauri";
 
-const VALID_STATUSES: AttendanceStatus[] = ["FULL", "HALF", "ABSENT", "HOLIDAY"];
+const VALID_STATUSES: AttendanceStatus[] = ["FULL", "HALF", "ABSENT"];
+
+/**
+ * Kaldırılan durum → bugünkü karşılığı.
+ *
+ * Eski yedeklerde 'HOLIDAY' bulunabilir. Geri yükleme reddedilirse kullanıcı
+ * yedeğini geri yükleyemez; bu yüzden kabul edip 'ABSENT'a çeviriyoruz
+ * (db.rs v14 migration'ının yaptığı dönüşümün aynısı).
+ */
+const LEGACY_STATUS_MAP: Record<string, AttendanceStatus> = { HOLIDAY: "ABSENT" };
 const VALID_WORKER_TYPES: WorkerType[] = ["ORTAK", "GUNLUK"];
 
 export interface BackupSummary {
@@ -226,10 +235,11 @@ export function validateBackup(raw: unknown): NormalizedBackup {
 
   const attendance = asArray(b.attendance, "attendance").map((r, i) => {
     const row = (r ?? {}) as Record<string, unknown>;
-    const status = text(row.status, "attendance.status", i) as AttendanceStatus;
+    const raw = text(row.status, "attendance.status", i);
+    const status = LEGACY_STATUS_MAP[raw] ?? (raw as AttendanceStatus);
     if (!VALID_STATUSES.includes(status)) {
       throw new BackupError(
-        `Bilinmeyen puantaj durumu "${status}" (satır ${i + 1}). ` +
+        `Bilinmeyen puantaj durumu "${raw}" (satır ${i + 1}). ` +
           `Bu yedek muhtemelen daha yeni bir uygulama sürümünden geliyor; ` +
           `geri yükleme yapılmadı, mevcut verileriniz duruyor.`,
       );

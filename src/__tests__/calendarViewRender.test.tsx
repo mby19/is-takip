@@ -118,7 +118,7 @@ describe("CalendarView", () => {
     expect(screen.getByTitle("Çalışan 6")).toBeInTheDocument();
   });
 
-  it("hücreye dokununca durum ilerler ve geri al düğmesi çıkar", async () => {
+  it("hücreye dokununca durum ilerler ve hücrede geri al düğmesi çıkar", async () => {
     useAttendanceStore.setState({
       attendances: [attendance("2026-05-10", 1, "FULL")],
     });
@@ -131,8 +131,11 @@ describe("CalendarView", () => {
 
     // Tam → Yarım
     expect(screen.getByLabelText("Çalışan 1, 10 Mayıs Pazar: Yarım")).toBeInTheDocument();
-    // Toast kökü App'te; burada store'daki geri alma eylemi doğrulanır.
-    expect(useToastStore.getState().toasts[0]?.action?.label).toBe("Geri al");
+    // Geri alma ekranı kapatan toast'ta değil, dokunulan hücrenin köşesindedir.
+    expect(
+      screen.getByLabelText("Çalışan 1, 10 Mayıs Pazar değişikliğini geri al"),
+    ).toBeInTheDocument();
+    expect(useToastStore.getState().toasts).toHaveLength(0);
   });
 
   it("sütun başlığından çalışan detayı açılır", () => {
@@ -165,7 +168,7 @@ describe("CalendarView", () => {
 
   it("sağ sütun ölçüsü değiştirilebilir", () => {
     renderCalendar();
-    const button = screen.getByLabelText(/Sağ sütun: Palet/);
+    const button = screen.getByLabelText(/Sağ sütun: Üretim/);
     fireEvent.click(button);
     expect(screen.getByLabelText(/Sağ sütun: Ciro/)).toBeInTheDocument();
   });
@@ -195,13 +198,16 @@ describe("memo etkinliği", () => {
     expect(counter.cells).toBe(4 * workers.length);
 
     // 10 Mayıs'ta puantajı OLMAYAN bir hücreye dokun: o gün 6 hücrenin
-    // tamamı yeniden çizilir, diğer 30 günün hiçbiri.
+    // tamamı yeniden çizilir, diğer 30 günün hiçbiri. Dokunulan hücre bir kez
+    // daha çizilir — yeni durum için bir, hücre geri bildirimi (parlama +
+    // geri al) için bir. Geri bildirim hücreye abone olduğu için yalnız onu
+    // etkiler.
     counter.cells = 0;
     await act(async () => {
       fireEvent.click(screen.getByLabelText("Çalışan 3, 10 Mayıs Pazar: Tam"));
     });
 
-    expect(counter.cells).toBe(workers.length);
+    expect(counter.cells).toBe(workers.length + 1);
   });
 
   /**

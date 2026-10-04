@@ -26,7 +26,6 @@ const STATUS_LABEL: Record<string, string> = {
   FULL: "Tam",
   HALF: "Yarım",
   ABSENT: "Yok",
-  HOLIDAY: "İzin",
 };
 
 /**

@@ -502,6 +502,55 @@ CREATE TABLE IF NOT EXISTS closed_periods (
 ",
             kind: MigrationKind::Up,
         },
+
+        Migration {
+            version: 14,
+            description: "remove_holiday_status",
+            sql: "
+-- Tatil kavrami tamamen kaldirildi. Iki ayri sey vardi:
+--   1) attendance.status icindeki 'HOLIDAY' (arayuzde 'Izin')
+--   2) daily_metrics.is_holiday (gun tatil bayragi)
+-- Kullanici karari: ikisi de gider.
+--
+-- (1) 'HOLIDAY' CHECK kisiti CHECK alter edilemedigi icin tablo yeniden
+-- kurulur; mevcut HOLIDAY satirlari 'ABSENT' olur. Boylece 'Izin' kaydi
+-- 'Yok' anlamina gelir ve para hesabi DEGISMEZ: statusWeight(HOLIDAY) da
+-- statusWeight(ABSENT) gibi 0 idi.
+--
+-- (2) daily_metrics.is_holiday kolonu SILINMEZ. Kolonu dusurmek eski
+-- yedeklerin geri yuklenmesini ve geri alma zincirini bozardi; kolon kalir,
+-- artik yazilmaz ve hesapta kullanilmaz.
+--
+-- NOT: Tetikleyiciler (trigger'lar) JS tarafindan yonetinir
+-- (src/schema/triggers.ts, ADR-0003). Bu migration tetikleyici olusturmaz.
+PRAGMA foreign_keys=OFF;
+
+-- Idempotency: onceki calismadan kalmis gecici tablo varsa temizlenir.
+DROP TABLE IF EXISTS attendance_new;
+
+CREATE TABLE attendance_new (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    worker_id INTEGER NOT NULL,
+    date TEXT NOT NULL,
+    status TEXT CHECK( status IN ('FULL', 'HALF', 'ABSENT') ) NOT NULL,
+    UNIQUE(worker_id, date),
+    FOREIGN KEY(worker_id) REFERENCES workers(id) ON DELETE CASCADE
+);
+
+INSERT INTO attendance_new (id, worker_id, date, status)
+SELECT id, worker_id, date,
+       CASE WHEN status = 'HOLIDAY' THEN 'ABSENT' ELSE status END
+FROM attendance;
+
+DROP TABLE attendance;
+ALTER TABLE attendance_new RENAME TO attendance;
+
+CREATE INDEX IF NOT EXISTS idx_attendance_date ON attendance(date);
+
+PRAGMA foreign_keys=ON;
+",
+            kind: MigrationKind::Up,
+        },
     ]
 }
 

@@ -13,7 +13,6 @@ import {
   Lock,
   MinusCircle,
   XCircle,
-  Palmtree,
   Plus,
   Edit2,
   Archive,
@@ -313,14 +312,13 @@ export function WorkerDetailView({ worker, onBack }: WorkerDetailViewProps) {
     [stats.dailyBreakdown],
   );
 
-  const attendanceTotal = stats.fullDays + stats.halfDays + stats.absentDays + stats.holidayDays;
+  const attendanceTotal = stats.fullDays + stats.halfDays + stats.absentDays;
 
-  /** Katılım oranı izinli günleri paydaya katmaz — izin devamsızlık değildir. */
+  /** Katılım oranı yalnız puantajlanan günleri sayar. */
   const attendanceRate = useMemo(() => {
-    const base = stats.fullDays + stats.halfDays + stats.absentDays;
-    if (base === 0) return 0;
-    return Math.round(((stats.fullDays + stats.halfDays * 0.5) / base) * 100);
-  }, [stats.fullDays, stats.halfDays, stats.absentDays]);
+    if (attendanceTotal === 0) return 0;
+    return Math.round(((stats.fullDays + stats.halfDays * 0.5) / attendanceTotal) * 100);
+  }, [attendanceTotal, stats.fullDays, stats.halfDays]);
 
   if (isLoading && attendance.length === 0 && workerPayments.length === 0) {
     return (
@@ -882,7 +880,6 @@ export function WorkerDetailView({ worker, onBack }: WorkerDetailViewProps) {
                     { value: stats.fullDays, cls: "bg-ok" },
                     { value: stats.halfDays, cls: "bg-warn" },
                     { value: stats.absentDays, cls: "bg-bad" },
-                    { value: stats.holidayDays, cls: "bg-info" },
                   ] as const
                 ).map((seg, i) =>
                   seg.value > 0 ? (
@@ -895,13 +892,12 @@ export function WorkerDetailView({ worker, onBack }: WorkerDetailViewProps) {
                 )}
             </div>
 
-            <div className="mt-3 grid grid-cols-4 gap-2">
+            <div className="mt-3 grid grid-cols-3 gap-2">
               {(
                 [
                   { label: "Tam", value: stats.fullDays, dot: "bg-ok", text: "text-ok" },
                   { label: "Yarım", value: stats.halfDays, dot: "bg-warn", text: "text-warn" },
                   { label: "Yok", value: stats.absentDays, dot: "bg-bad", text: "text-bad" },
-                  { label: "İzin", value: stats.holidayDays, dot: "bg-info", text: "text-info" },
                 ] as const
               ).map((item) => (
                 <div key={item.label}>
@@ -941,9 +937,7 @@ export function WorkerDetailView({ worker, onBack }: WorkerDetailViewProps) {
                               ? "bg-amber-50/40 dark:bg-amber-500/5"
                               : day.status === "ABSENT"
                                 ? "bg-rose-50/30 dark:bg-rose-500/5"
-                                : day.status === "HOLIDAY"
-                                  ? "bg-sky-50/40 dark:bg-sky-500/5"
-                                  : ""
+                                : ""
                         }`}
                       >
                         <div className="w-12">
@@ -964,10 +958,6 @@ export function WorkerDetailView({ worker, onBack }: WorkerDetailViewProps) {
                           ) : day.status === "ABSENT" ? (
                             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-bad-soft text-bad text-[10px] font-bold">
                               <XCircle className="w-3 h-3" /> Yok
-                            </span>
-                          ) : day.status === "HOLIDAY" ? (
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-info-soft text-info text-[10px] font-bold">
-                              <Palmtree className="w-3 h-3" /> İzin
                             </span>
                           ) : (
                             <div className="w-4 h-4 rounded-full border-2 border-dashed border-muted-foreground/25" />

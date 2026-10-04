@@ -46,7 +46,7 @@ export interface EffectiveRate {
 
 export type RateResolver = (worker: Worker) => EffectiveRate;
 
-/** Durumun kazanç ağırlığı. HOLIDAY (tatil) çalışılmayan gün sayılır. */
+/** Durumun kazanç ağırlığı. ABSENT ve kayıtsız gün kazandırmaz. */
 export function statusWeight(status: AttendanceStatus | null | undefined): number {
   if (status === "FULL") return 1;
   if (status === "HALF") return 0.5;
@@ -271,7 +271,7 @@ function resolveByScan(
  * Yevmiyeli (GUNLUK) ücretler bu kuraldan etkilenmez — her koşulda ödenir.
  *
  * **Aktif ortak yoksa kâr da dağıtılmaz.** Ortak bulunmayan bir günde
- * (ya da hepsi ABSENT/HOLIDAY olduğunda) kâr havuzu boşta kalır; bu tutar
+ * (ya da hepsi ABSENT olduğunda) kâr havuzu boşta kalır; bu tutar
  * `undistributed` olarak işaretlenerek **raporlanır**. Aksi hâlde kâr ne
  * dağıtılır ne raporlanır ve para sessizce kaybolur.
  *
@@ -336,7 +336,7 @@ export function calculateDailyEarnings(
     totalWorkerCosts += amount;
   }
 
-  // ABSENT/HOLIDAY günlerde yevmiye 0'dır; "çalışıldı" sayılması için gerçek
+  // ABSENT günlerde yevmiye 0'dır; "çalışıldı" sayılması için gerçek
   // maliyete bakılır, kayıt varlığına değil.
   const hasActiveWork = totalWorkerCosts > 0 || activePartners.length > 0;
   const hasActivity = Number(totalEarned) > 0 || Number(extraExpenses) > 0;

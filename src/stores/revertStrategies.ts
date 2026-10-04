@@ -108,6 +108,19 @@ async function resolveWorkerId(data: Record<string, string> | null): Promise<num
 /** Anlık görüntüde olmayan çalışan "YOK" demektir — puantaj kaydı yoktur. */
 const NO_RECORD = "YOK";
 
+/**
+ * Kaldırılan 'HOLIDAY' durumunun bugünkü karşılığı.
+ *
+ * Denetim kaydındaki anlık görüntü düz metindir; eski kayıtlar "HOLIDAY"
+ * içerebilir. Bu değer olduğu gibi geri yazılırsa CHECK ihlaliyle transaction
+ * geri alınır ve geri alma çalışmaz. Bu yüzden dönüşüm burada da yapılır —
+ * db.rs v14 migration'ı ve yedek doğrulamasıyla aynı sonucu üretiyoruz.
+ */
+const LEGACY_STATUS: Record<string, string> = { HOLIDAY: "ABSENT" };
+
+/** Anlık görüntüdeki durumu bugünkü kabul edilen değere indirger. */
+const normalizeStatus = (status: string): string => LEGACY_STATUS[status] ?? status;
+
 // ---------------------------------------------------------------------------
 // INSERT (kaydı eklemeyi geri al)
 // ---------------------------------------------------------------------------
@@ -237,14 +250,15 @@ function attendanceDiffStatements(
     if (previous === NO_RECORD) {
       // Bu işlem kaydı oluşturmuştu; yalnızca hâlâ aynı durumdaysa silinir.
       statements.push(
-        `DELETE FROM attendance WHERE worker_id = ${sqlLiteral(entry.id)} AND date = ${sqlLiteral(date)} AND status = ${sqlLiteral(entry.status)}`,
+        `DELETE FROM attendance WHERE worker_id = ${sqlLiteral(entry.id)} AND date = ${sqlLiteral(date)} AND status = ${sqlLiteral(normalizeStatus(entry.status))}`,
       );
       continue;
     }
 
     // Önce kayıt vardı: önceki durum geri yazılır (UPSERT, silme değil).
+    // Eski kayıtta 'HOLIDAY' yazıyorsa 'ABSENT' olur — CHECK ihlaline düşmemek için.
     statements.push(
-      `INSERT OR ROLLBACK INTO attendance (worker_id, date, status) VALUES (${sqlLiteral(entry.id)}, ${sqlLiteral(date)}, ${sqlLiteral(previous)})
+      `INSERT OR ROLLBACK INTO attendance (worker_id, date, status) VALUES (${sqlLiteral(entry.id)}, ${sqlLiteral(date)}, ${sqlLiteral(normalizeStatus(previous))})
          ON CONFLICT(worker_id, date) DO UPDATE SET status = excluded.status`,
     );
   }
@@ -274,6 +288,9 @@ const updateDailyMetricsStrategy: RevertStrategy = {
     );
     const tEarned = optionalNumber(oldData.earned || oldData.total_earned, "kazanç", 0);
     const eExp = optionalNumber(oldData.expenses || oldData.extra_expenses, "gider", 0);
+    // `is_holiday` artık hesaba girmez ve yeni kayıtlarda yazılmaz; kolon
+    // veritabanında kaldığı için geri alma onu da taşımaya devam eder. Bu bir
+    // veri bütünlüğü meselesi: denetim kaydında ne vardıysa geri yüklenir.
     const isHol = optionalInt(oldData.holiday || oldData.is_holiday, "tatil", 0);
 
     const statements = [
@@ -486,6 +503,7 @@ const deleteDailyMetricsStrategy: RevertStrategy = {
     );
     const earned = optionalNumber(oldData.earned || oldData.total_earned, "kazanç", 0);
     const expenses = optionalNumber(oldData.expenses || oldData.extra_expenses, "gider", 0);
+    // Bkz. updateDailyMetricsStrategy: kolon kaldığı için taşınıyor, hesaba girmiyor.
     const holiday = optionalInt(oldData.holiday || oldData.is_holiday, "tatil", 0);
 
     return [

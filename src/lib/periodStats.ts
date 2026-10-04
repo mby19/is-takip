@@ -342,7 +342,6 @@ export function buildWorkerStats(
     fullDays: breakdown.filter((d) => d.status === "FULL").length,
     halfDays: breakdown.filter((d) => d.status === "HALF").length,
     absentDays: breakdown.filter((d) => d.status === "ABSENT").length,
-    holidayDays: breakdown.filter((d) => d.status === "HOLIDAY").length,
   };
 }
 

@@ -70,20 +70,17 @@ const renderSheet = (onClose = vi.fn()) => {
 };
 
 describe("DayDetailSheet", () => {
-  it("dört durum düğmesi gösterir (tatil dahil)", () => {
+  it("üç durum düğmesi gösterir", () => {
     renderSheet();
     expect(screen.getByRole("button", { name: "Ahmet Yılmaz: Tam" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Ahmet Yılmaz: Yarım" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Ahmet Yılmaz: Yok" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Ahmet Yılmaz: İzin" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /İzin/ })).toBeNull();
   });
 
-  it("resmî tatil anahtarı vardır ve durumu aria-pressed ile bildirir", async () => {
+  it("tatil düğmesi yoktur", () => {
     renderSheet();
-    const toggle = screen.getByRole("button", { name: "Tatil" });
-    expect(toggle).toHaveAttribute("aria-pressed", "false");
-    await click(toggle);
-    expect(toggle).toHaveAttribute("aria-pressed", "true");
+    expect(screen.queryByRole("button", { name: "Tatil" })).toBeNull();
   });
 
   it("gün açıldığında otomatik olarak önceki günü kopyalamaz", () => {

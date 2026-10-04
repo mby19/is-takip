@@ -90,11 +90,18 @@ afterEach(() => {
 const renderCalendar = () =>
   render(<CalendarView currentDate={monthStart} onDayClick={vi.fn()} onWorkerClick={vi.fn()} />);
 
+/**
+ * Hücre artık bir sarmalayıcı `div` içinde: geri al düğmesi hücrenin köşesine
+ * ayrı bir kardeş olarak yerleşiyor. Esnek ölçüler (`flex`/`min-width`) flex
+ * çocuğu olan sarmalayıcıda duruyor, düğmede değil.
+ */
+const cellBox = (cell: HTMLElement) => cell.parentElement as HTMLElement;
+
 describe("takvim — yatay taşma", () => {
   it("puantaj hücresi 44px dokunma hedefinden dar değil", () => {
     renderCalendar();
     const cell = screen.getByLabelText("Çalışan 1, 1 Mayıs Cuma: kayıt yok");
-    const minWidth = (cell as HTMLElement).style.minWidth;
+    const minWidth = cellBox(cell).style.minWidth;
     expect(remToPx(minWidth)).toBeGreaterThanOrEqual(44);
   });
 
@@ -114,7 +121,7 @@ describe("takvim — yatay taşma", () => {
     const total =
       remToPx((day as HTMLElement).style.width) +
       remToPx((side as HTMLElement).style.width) +
-      remToPx((first as HTMLElement).style.minWidth) * cells.length;
+      remToPx(cellBox(first).style.minWidth) * cells.length;
 
     expect(cells).toHaveLength(workers.length);
     expect(total).toBeGreaterThan(NARROW_PHONE);
@@ -187,7 +194,7 @@ describe("takvim — saha paletiyle birlikte", () => {
   it("durum çipi hücrenin içinde kalır, hedefi daraltmaz", () => {
     renderCalendar();
     const cell = screen.getByLabelText("Çalışan 1, 1 Mayıs Cuma: kayıt yok");
-    const minWidth = (cell as HTMLElement).style.minWidth;
+    const minWidth = cellBox(cell).style.minWidth;
     expect(remToPx(minWidth)).toBeGreaterThanOrEqual(44);
     expect(cell.className).toContain("tap-target");
   });

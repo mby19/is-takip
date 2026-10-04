@@ -38,17 +38,26 @@ export interface SchemaRepairReport {
 /** Yeniden kurulum yarıda kalırsa verinin beklediği geçici tablo adları. */
 const LEFTOVER_TABLES = ["attendance_fix", "attendance_new"];
 
-const ATTENDANCE_COLUMNS = "(id, worker_id, date, status)";
-
 const CREATE_ATTENDANCE_FIX = `
 CREATE TABLE attendance_fix (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   worker_id INTEGER NOT NULL,
   date TEXT NOT NULL,
-  status TEXT CHECK( status IN ('FULL', 'HALF', 'ABSENT', 'HOLIDAY') ) NOT NULL,
+  status TEXT CHECK( status IN ('FULL', 'HALF', 'ABSENT') ) NOT NULL,
   UNIQUE(worker_id, date),
   FOREIGN KEY(worker_id) REFERENCES workers(id) ON DELETE CASCADE
 )`;
+
+/**
+ * Eski 'HOLIDAY' satırlarını yeni tabloya taşırken 'ABSENT'a çevirir.
+ *
+ * Neden: Rust migration'ı (db.rs v14) aynı dönüşümü yapar. schemaGuard
+ * Rust migration'ının uygulanmadığı cihazlarda devreye girer; ikisi de aynı
+ * sonucu vermek zorundadır, aksi hâlde CHECK ihlaliyle yazma reddedilir.
+ */
+const COPY_ATTENDANCE =
+  "INSERT INTO attendance_fix (id, worker_id, date, status) " +
+  "SELECT id, worker_id, date, CASE WHEN status = 'HOLIDAY' THEN 'ABSENT' ELSE status END FROM attendance";
 
 const CREATE_ATTENDANCE_INDEX =
   "CREATE INDEX IF NOT EXISTS idx_attendance_date ON attendance(date)";
@@ -178,18 +187,19 @@ export async function repairSchema(db: Db): Promise<SchemaRepairReport> {
     ["ALTER TABLE workers ADD COLUMN short_label TEXT"],
   );
 
-  // İzin (HOLIDAY) kısıtı: SQLite CHECK değiştirmeye izin vermez, tablo
+  // 'HOLIDAY' kısıtı: SQLite CHECK değiştirmeye izin vermez, tablo
   // yeniden kurulur. Tetikleyiciler ÖNCE düşürülür — yukarıdaki nota bakın.
   await run(
-    "İzin durumu kısıtı",
+    "Tatil (HOLIDAY) durumu kaldırıldı",
     async () => {
       const sql = await tableSql(db, "attendance");
-      return sql.length > 0 && !sql.includes("HOLIDAY");
+      return sql.includes("HOLIDAY");
     },
     [
       ...DROP_TRIGGERS,
+      "DROP TABLE IF EXISTS attendance_fix",
       CREATE_ATTENDANCE_FIX,
-      `INSERT INTO attendance_fix ${ATTENDANCE_COLUMNS} SELECT id, worker_id, date, status FROM attendance`,
+      COPY_ATTENDANCE,
       "DROP TABLE attendance",
       "ALTER TABLE attendance_fix RENAME TO attendance",
       CREATE_ATTENDANCE_INDEX,

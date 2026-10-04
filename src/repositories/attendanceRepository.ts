@@ -3,7 +3,7 @@ import { sqlLiteral } from "../lib/sql";
 import type { Attendance, AttendanceStatus } from "../types";
 
 /** SQL'de kabul edilen durumlar — CHECK kısıtıyla birebir aynı. */
-const VALID_STATUSES: readonly string[] = ["FULL", "HALF", "ABSENT", "HOLIDAY"];
+const VALID_STATUSES: readonly string[] = ["FULL", "HALF", "ABSENT"];
 
 /**
  * Tek bir puantaj yazma ifadesi.

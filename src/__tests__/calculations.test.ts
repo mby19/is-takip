@@ -28,7 +28,7 @@ function makeMetrics(date: string, overrides?: Partial<DailyMetric>): DailyMetri
 function makeAttendance(
   worker_id: number,
   date: string,
-  status: "FULL" | "HALF" | "ABSENT" | "HOLIDAY",
+  status: "FULL" | "HALF" | "ABSENT",
 ): Attendance {
   return { id: 0, worker_id, date, status };
 }

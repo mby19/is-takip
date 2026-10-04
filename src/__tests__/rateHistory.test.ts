@@ -1,8 +1,19 @@
 import { describe, it, expect } from "vitest";
 import { calculateWorkerStats } from "../utils/calculations";
-import { resolveWorkerRate, calculateDailyEarnings } from "../utils/earningsCalculator";
+import {
+  resolveWorkerRate,
+  calculateDailyEarnings,
+  statusWeight,
+} from "../utils/earningsCalculator";
 import { parseAttendanceSnapshot } from "../utils/parseLogData";
-import type { Worker, WorkerRate, Attendance, Payment, DailyMetric } from "../types";
+import type {
+  Worker,
+  WorkerRate,
+  Attendance,
+  Payment,
+  DailyMetric,
+  AttendanceStatus,
+} from "../types";
 
 const worker: Worker = {
   id: 1,
@@ -126,25 +137,31 @@ describe("dönem bakiyesi ile kümülatif bakiye", () => {
   });
 });
 
-describe("tatil (HOLIDAY)", () => {
-  it("kazanç üretmez ve ayrı sayılır", () => {
+describe("kaldırılan tatil (HOLIDAY) durumu", () => {
+  // HOLIDAY kaldırıldı; eski kayıtlar ABSENT oldukları için para hesabının
+  // değişmediği bu iki testle sabitlenir: ağırlık ve gün sayacı aynı.
+  it("ABSENT gün kazanç üretmez ve devamsızlık olarak sayılır", () => {
     const stats = calculateWorkerStats(
       worker,
       new Date(2026, 4, 1),
       [],
-      [att("2026-05-10", "HOLIDAY")],
+      [att("2026-05-10", "ABSENT")],
       [worker],
       [],
     );
     expect(stats.totalEarnedInMonth).toBe(0);
-    expect(stats.holidayDays).toBe(1);
-    expect(stats.absentDays).toBe(0);
+    expect(stats.absentDays).toBe(1);
   });
 
   it("günlük hesapta ağırlığı sıfırdır", () => {
-    const result = calculateDailyEarnings([worker], { 1: "HOLIDAY" }, 5000, 0);
+    const result = calculateDailyEarnings([worker], { 1: "ABSENT" }, 5000, 0);
     expect(result.individualEarnings[1]).toBe(0);
     expect(result.totalWorkerCosts).toBe(0);
+  });
+
+  it("eski HOLIDAY değeri bugünkü ABSENT ile aynı ağırlığa sahip", () => {
+    // Eski kodda statusWeight("HOLIDAY") da 0 dönerdi; para değişmedi.
+    expect(statusWeight("HOLIDAY" as AttendanceStatus)).toBe(statusWeight("ABSENT"));
   });
 });
 

@@ -1,6 +1,12 @@
 export type WorkerType = "ORTAK" | "GUNLUK";
 
-export type AttendanceStatus = "FULL" | "HALF" | "ABSENT" | "HOLIDAY";
+/**
+ * Puantaj durumu.
+ *
+ * 'HOLIDAY' ("İzin") 2026'da kaldırıldı: eski kayıtlar 'ABSENT' oldukları
+ * için ayrı bir durum kalmadı. Hesap ağırlığı zaten 0 idi, para değişmedi.
+ */
+export type AttendanceStatus = "FULL" | "HALF" | "ABSENT";
 
 export interface Worker {
   id: number;
@@ -44,6 +50,12 @@ export interface DailyMetric {
   production_amount: number;
   total_earned: number;
   extra_expenses: number;
+  /**
+   * Artık kullanılmayan kolon. Yazılmaz, hesapta girmez.
+   *
+   * Kolon veritabanında kaldı: düşürmek eski yedeklerin geri yüklenmesini ve
+   * geri alma zincirini kırıyordu. Tipte de kaldı — yedek okurken gelir.
+   */
   is_holiday?: boolean;
 }
 

@@ -29,7 +29,7 @@ function makeRng(seed: number): () => number {
 }
 
 const WORKER_TYPES: readonly WorkerType[] = ["GUNLUK", "ORTAK"];
-const STATUSES = ["FULL", "HALF", "ABSENT", "HOLIDAY"] as const;
+const STATUSES = ["FULL", "HALF", "ABSENT"] as const;
 
 const pad = (n: number) => String(n).padStart(2, "0");
 

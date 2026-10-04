@@ -34,11 +34,19 @@ export interface AuditEntryView {
   revertable: boolean;
 }
 
+/**
+ * Denetim kaydı etiketleri.
+ *
+ * `HOLIDAY` KALDIRILMADI: bu tablo audit_logs.old_data/new_data içindeki
+ * düz metinden beslenir ve eski kayıtlar hâlâ "HOLIDAY" içerebilir. Yazılabilir
+ * bir durum olmaktan çıktı ama okunabilir olmayı sürdürüyoruz; bilinmeyen
+ * her değer `statusLabel`/`statusTone` içindeki `||` ile güvenle düşüyor.
+ */
 const STATUS_LABEL: Record<string, string> = {
   FULL: "Tam gün",
   HALF: "Yarım gün",
   ABSENT: "Gelmedi",
-  HOLIDAY: "İzinli",
+  HOLIDAY: "İzinli (eski kayıt)",
   YOK: "Kayıt yok",
 };
 

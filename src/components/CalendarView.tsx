@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, useCallback, memo } from "react";
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, isToday, getDay } from "date-fns";
 import { tr } from "date-fns/locale";
-import { Check, Minus, X, Palmtree, Users, Archive, Repeat, Rows3, Rows4 } from "lucide-react";
+import { Check, Minus, X, Users, Archive, Repeat, Rows3, Rows4, Undo2 } from "lucide-react";
 import { useWorkerStore } from "../stores/workerStore";
 import { useAttendanceStore } from "../stores/attendanceStore";
 import { useMetricsStore } from "../stores/metricsStore";
@@ -11,6 +11,13 @@ import { TableSkeleton } from "./ui/skeleton";
 import type { DailyMetric, Attendance, Worker, WorkerRate, AttendanceStatus } from "../types";
 import { calculateDailyEarnings, rateResolverFor } from "../utils/earningsCalculator";
 import { useAnimatedCounter } from "../hooks/useAnimatedCounter";
+import {
+  useCellFeedback,
+  readCellFeedback,
+  useCellFeedbackStore,
+  type FeedbackTone,
+} from "../hooks/useCellFeedback";
+import { hapticError, hapticSuccess } from "../hooks/useHaptics";
 import { periodOfDate } from "../lib/period";
 import { readPref, writePref } from "../lib/prefs";
 import { formatMoney } from "../lib/utils";
@@ -34,25 +41,23 @@ const STATUS_STYLE: Record<
   FULL: { label: "Tam", chip: "bg-ok-soft text-ok", dot: "bg-ok", icon: Check },
   HALF: { label: "Yarım", chip: "bg-warn-soft text-warn", dot: "bg-warn", icon: Minus },
   ABSENT: { label: "Yok", chip: "bg-bad-soft text-bad", dot: "bg-bad", icon: X },
-  HOLIDAY: { label: "İzin", chip: "bg-info-soft text-info", dot: "bg-info", icon: Palmtree },
 };
 
 /**
  * Hücreye dokununca izlenen sıra: Tam → Yarım → Yok → boş → Tam …
  *
- * İzin bilerek döngüde DEĞİL. Nadir kullanılıyor ve döngüye girdiğinde
- * "Yok"tan sonra tekrar "Tam"a dönmek dört dokunuş sürüyordu. İzin, gün
- * sayfasındaki dört seçenekten doğrudan işaretlenir.
+ * Durum sayısı sabit üç; döngüye dördüncü bir seçenek eklemek "Yok"tan sonra
+ * tekrar "Tam"a dönüşü bir dokunuş uzatıyordu.
  */
 const CYCLE: (AttendanceStatus | null)[] = ["FULL", "HALF", "ABSENT", null];
 const nextStatus = (current: AttendanceStatus | null): AttendanceStatus | null =>
   CYCLE[(CYCLE.indexOf(current) + 1) % CYCLE.length];
 
-const STATUS_ORDER: AttendanceStatus[] = ["FULL", "HALF", "ABSENT", "HOLIDAY"];
+const STATUS_ORDER: AttendanceStatus[] = ["FULL", "HALF", "ABSENT"];
 
 /** Sağ sütunun gösterebileceği ölçüler. */
 const METRICS = [
-  { key: "production", label: "Palet" },
+  { key: "production", label: "Üretim" },
   { key: "revenue", label: "Ciro" },
   { key: "profit", label: "Net kâr" },
 ] as const;
@@ -226,6 +231,104 @@ function StatusMark({
   );
 }
 
+/** Parlamanın rengi. `motion-reduce`'da da aynı sınıf kalır: statik renk değişimi. */
+const TONE_FLASH: Record<FeedbackTone, string> = {
+  success: "bg-ok/45",
+  cleared: "bg-muted-foreground/35",
+  error: "bg-bad/45",
+};
+
+/** `date|workerId` — bir hücreyi tüm ay boyunca tekil tanımlayan anahtar. */
+const cellFeedbackKey = (dateStr: string, workerId: number) => `${dateStr}|${workerId}`;
+
+/**
+ * Tek puantaj hücresi.
+ *
+ * Geri bildirim `CalendarView`'un state'i değil, HÜCRE BAŞINA abonelikle gelen
+ * ayrı bir store'dur (`useCellFeedback`). State burada olsaydı bir dokunuş ayın
+ * 31 `memo`lanmış satırının hepsini geçersiz kılardı.
+ *
+ * `memo` BİLEREK yok: satır her çizildiğinde o günün tüm hücrelerinin
+ * çizilmesi zaten beklenen davranış (`calendarViewRender.test.tsx` bunu
+ * "bir hücreye dokununca yalnızca o günün hücreleri çizilir" diye ölçüyor).
+ */
+function WorkerCell({
+  worker,
+  dateStr,
+  label,
+  status,
+  density,
+  readOnly,
+  tabbable,
+  rowIndex,
+  colIndex,
+  onCellTap,
+}: {
+  worker: Worker;
+  dateStr: string;
+  label: string;
+  status: AttendanceStatus | null;
+  density: (typeof DENSITY)[DensityKey];
+  readOnly: boolean;
+  tabbable: boolean;
+  rowIndex: number;
+  colIndex: number;
+  onCellTap: (worker: Worker, dateStr: string, current: AttendanceStatus | null) => void;
+}) {
+  const cellKey = cellFeedbackKey(dateStr, worker.id);
+  const feedback = useCellFeedback(cellKey);
+  const wrapRef = useRef<HTMLDivElement>(null);
+
+  /**
+   * Geri al düğmesi DOM'dan kalkınca odak hücreye döner: klavye kullanıcısı
+   * sayfayı kaybetmez. Aynı hücreye yeniden dokunulabilir kalsın diye.
+   */
+  const runUndo = () => {
+    const undo = feedback?.undo;
+    if (!undo) return;
+    useCellFeedbackStore.getState().clear(cellKey);
+    void undo();
+    wrapRef.current?.querySelector<HTMLElement>("[data-cal-cell]")?.focus();
+  };
+
+  return (
+    <div ref={wrapRef} style={WORKER_CELL} className="relative shrink-0">
+      <button
+        type="button"
+        disabled={readOnly}
+        onClick={() => onCellTap(worker, dateStr, status)}
+        aria-label={`${worker.name}, ${label}: ${status ? STATUS_STYLE[status].label : "kayıt yok"}`}
+        tabIndex={tabbable ? 0 : -1}
+        data-cal-cell={`${rowIndex}-${colIndex}`}
+        className="tap-target relative w-full h-full flex items-center justify-center border-b border-border/40 active:scale-90 transition-transform disabled:active:scale-100 hover:bg-muted/40 disabled:hover:bg-transparent"
+      >
+        {feedback?.tone && (
+          <span
+            key={feedback.token}
+            aria-hidden="true"
+            className={`pointer-events-none absolute inset-0 rounded-[0.6rem] motion-safe:animate-cell-flash motion-reduce:animate-none ${TONE_FLASH[feedback.tone]}`}
+          />
+        )}
+        <span className="relative">
+          <StatusMark status={status} density={density} />
+        </span>
+      </button>
+
+      {feedback?.undo && (
+        <button
+          type="button"
+          onClick={runUndo}
+          aria-label={`${worker.name}, ${label} değişikliğini geri al`}
+          title="Geri al"
+          className="absolute top-0 right-0 z-10 grid place-items-center w-6 h-6 rounded-full bg-background text-foreground shadow-sm ring-1 ring-border/70 after:absolute after:-inset-1 after:content-['']"
+        >
+          <Undo2 className="w-3 h-3" strokeWidth={2.5} />
+        </button>
+      )}
+    </div>
+  );
+}
+
 interface MonthStatsProps {
   production: number;
   revenue: number;
@@ -263,7 +366,7 @@ function Counter({ target, format }: { target: number; format: (n: number) => st
 function MonthStats({ production, revenue, netProfit }: MonthStatsProps) {
   return (
     <div className="px-4 pb-3 bg-surface shrink-0 grid grid-cols-3 gap-3">
-      <StatBox label="Palet" tone="text-foreground">
+      <StatBox label="Üretim" tone="text-foreground">
         <Counter target={production} format={plainNumber} />
       </StatBox>
       <StatBox label="Ciro" tone="text-foreground">
@@ -359,24 +462,21 @@ const CalendarRow = memo(function CalendarRow({
         </span>
       </button>
 
-      {workers.map((w, workerIndex) => {
-        const status = attendance[String(w.id)]?.status ?? null;
-        return (
-          <button
-            key={w.id}
-            type="button"
-            disabled={readOnly}
-            onClick={() => onCellTap(w, dateStr, status)}
-            aria-label={`${w.name}, ${label}: ${status ? STATUS_STYLE[status].label : "kayıt yok"}`}
-            tabIndex={tabbableCol === workerIndex + 1 ? 0 : -1}
-            data-cal-cell={`${rowIndex}-${workerIndex + 1}`}
-            style={WORKER_CELL}
-            className="tap-target flex items-center justify-center border-b border-border/40 active:scale-90 transition-transform disabled:active:scale-100 hover:bg-muted/40 disabled:hover:bg-transparent"
-          >
-            <StatusMark status={status} density={density} />
-          </button>
-        );
-      })}
+      {workers.map((w, workerIndex) => (
+        <WorkerCell
+          key={w.id}
+          worker={w}
+          dateStr={dateStr}
+          label={label}
+          status={attendance[String(w.id)]?.status ?? null}
+          density={density}
+          readOnly={readOnly}
+          tabbable={tabbableCol === workerIndex + 1}
+          rowIndex={rowIndex}
+          colIndex={workerIndex + 1}
+          onCellTap={onCellTap}
+        />
+      ))}
 
       <button
         type="button"
@@ -738,26 +838,43 @@ export function CalendarView({
 
   /**
    * Hücreye dokunulduğunda durum bir sonrakine geçer ve ANINDA yazılır.
-   * Kâğıt puantajdaki "kutuyu işaretle" hareketinin karşılığı; bordro kaydı
-   * olduğu için her değişiklik geri alınabilir bir bildirimle bildirilir.
+   * Kâğıt puantajdaki "kutuyu işaretle" hareketinin karşılığı.
+   *
+   * Bildirim artık ekranı kapatan toast DEĞİL: dokunulan cihazda kısa bir
+   * titreşim + hücrede kısa bir parlama. 50 kişiye arka arkaya dokunan
+   * kullanıcının ekranı birbiriyle binen bildirimlerle kapanıyordu.
+   *
+   * Geri alma korunur: değişiklik hücrenin köşesinde 3 saniye duran bir
+   * düğmeyle geri alınabilir. Aynı hücreye art arda dokunulduğunda geri alma
+   * ZİNCİRİN İLK durumuna döner — iki ayrı toast'un işi tek düğmeye sığmıyor.
    */
   const handleCellTap = useCallback(
     async (worker: Worker, dateStr: string, current: AttendanceStatus | null) => {
+      const key = cellFeedbackKey(dateStr, worker.id);
       const next = nextStatus(current);
+      const base = readCellFeedback(key)?.base ?? current;
+      const { pulse } = useCellFeedbackStore.getState();
+
       try {
         await markAttendance(worker.id, dateStr, next);
-        const label = next ? STATUS_STYLE[next].label.toLocaleLowerCase("tr-TR") : "temizlendi";
-        addToast(
-          `${worker.name.split(" ")[0]} · ${format(new Date(dateStr), "d MMM", { locale: tr })} · ${label}`,
-          {
-            type: "success",
-            action: {
-              label: "Geri al",
-              onClick: () => markAttendance(worker.id, dateStr, current),
-            },
+        pulse(key, next ? "success" : "cleared", {
+          base,
+          undo: async () => {
+            try {
+              await markAttendance(worker.id, dateStr, base as AttendanceStatus | null);
+              hapticSuccess();
+            } catch (err: unknown) {
+              hapticError();
+              addToast(err instanceof Error ? err.message : String(err), "error");
+            }
           },
-        );
+        });
+        hapticSuccess();
       } catch (err: unknown) {
+        // Hata nadir ve açıklamaya muhtaç: yine toast, ama ek olarak kırmızı
+        // parlama + titreşim. Mevcut geri alma düğmesi silinmez.
+        hapticError();
+        pulse(key, "error");
         addToast(err instanceof Error ? err.message : String(err), "error");
       }
     },

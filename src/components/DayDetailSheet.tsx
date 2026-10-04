@@ -2,17 +2,7 @@ import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "./ui/sheet";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "./ui/dialog";
 import { WorkerAvatar } from "./ui/worker-avatar";
-import {
-  Check,
-  X,
-  Minus,
-  Palmtree,
-  CopyPlus,
-  Eraser,
-  Archive,
-  Lock,
-  CheckCheck,
-} from "lucide-react";
+import { Check, X, Minus, CopyPlus, Eraser, Archive, Lock, CheckCheck } from "lucide-react";
 import { useWorkerStore } from "../stores/workerStore";
 import { useAttendanceStore } from "../stores/attendanceStore";
 import { useMetricsStore } from "../stores/metricsStore";
@@ -37,26 +27,23 @@ interface DayDetailSheetProps {
 type EditMap = Record<number, AttendanceStatus | null>;
 
 /** Finansal alanlar — yalnızca bunlar değiştiyse `daily_metrics`'e yazılır. */
-type FinancialField = "production" | "totalEarned" | "extraExpenses" | "isHoliday";
+type FinancialField = "production" | "totalEarned" | "extraExpenses";
 interface FinancialDraft {
   production: number;
   totalEarned: number;
   extraExpenses: number;
-  isHoliday: boolean;
 }
 
 const EMPTY_FINANCIAL: FinancialDraft = {
   production: 0,
   totalEarned: 0,
   extraExpenses: 0,
-  isHoliday: false,
 };
 
 const toFinancial = (draft: FinancialDraft): FinancialDraft => ({
   production: Number(draft.production) || 0,
   totalEarned: Number(draft.totalEarned) || 0,
   extraExpenses: Number(draft.extraExpenses) || 0,
-  isHoliday: Boolean(draft.isHoliday),
 });
 
 /** İki finansal taslak arasındaki fark; boşsa hiçbir şey yazılmaz. */
@@ -66,7 +53,7 @@ const financialDiff = (before: FinancialDraft, after: FinancialDraft): Financial
   return (Object.keys(left) as FinancialField[]).filter((key) => left[key] !== right[key]);
 };
 
-/** Dört durum tek bir segment denetiminde toplanır — dört ayrı çerçeve yerine. */
+/** Üç durum tek bir segment denetiminde toplanır — üç ayrı çerçeve yerine. */
 const SEGMENTS: {
   status: AttendanceStatus;
   label: string;
@@ -76,7 +63,6 @@ const SEGMENTS: {
   { status: "FULL", label: "Tam", icon: Check, active: "bg-ok text-on-ok" },
   { status: "HALF", label: "Yarım", icon: Minus, active: "bg-warn text-on-warn" },
   { status: "ABSENT", label: "Yok", icon: X, active: "bg-bad text-on-bad" },
-  { status: "HOLIDAY", label: "İzin", icon: Palmtree, active: "bg-info text-on-info" },
 ];
 
 export function DayDetailSheet({ isOpen, onClose, dateStr }: DayDetailSheetProps) {
@@ -138,7 +124,7 @@ export function DayDetailSheet({ isOpen, onClose, dateStr }: DayDetailSheetProps
   /** Kullanıcı bir şeye dokundu mu? Dokunduysa sessiz tazeleme taslağı ezmez. */
   const touchedRef = useRef(false);
 
-  const updateFinancial = useCallback((key: FinancialField, value: number | boolean) => {
+  const updateFinancial = useCallback((key: FinancialField, value: number) => {
     touchedRef.current = true;
     setFinancial((prev) => ({ ...prev, [key]: value }));
   }, []);
@@ -158,7 +144,6 @@ export function DayDetailSheet({ isOpen, onClose, dateStr }: DayDetailSheetProps
       production: dayMetric?.production_amount || 0,
       totalEarned: dayMetric?.total_earned || 0,
       extraExpenses: dayMetric?.extra_expenses || 0,
-      isHoliday: Boolean(dayMetric?.is_holiday),
     };
     setFinancial(next);
     setBaseline(next);
@@ -313,12 +298,18 @@ export function DayDetailSheet({ isOpen, onClose, dateStr }: DayDetailSheetProps
     let financialSaved = false;
     try {
       if (changedFinancialFields.length > 0) {
+        // `is_holiday` kolonu duruyor ama artık UI'da karşılığı yok. Değeri
+        // AYNEN geçiriyoruz: `false` göndermek, o güne ait bayrağı her
+        // finansal kayıtta sessizce silerdi.
+        const storedHoliday = Boolean(
+          metrics.find((m) => String(m.date).trim() === dateStr)?.is_holiday,
+        );
         await updateMetrics(
           dateStr,
           Number(financial.production) || 0,
           Number(financial.totalEarned) || 0,
           Number(financial.extraExpenses) || 0,
-          Boolean(financial.isHoliday),
+          storedHoliday,
         );
         financialSaved = true;
       }
@@ -409,21 +400,6 @@ export function DayDetailSheet({ isOpen, onClose, dateStr }: DayDetailSheetProps
                   </p>
                 )}
               </div>
-
-              <button
-                type="button"
-                onClick={() => updateFinancial("isHoliday", !financial.isHoliday)}
-                aria-pressed={financial.isHoliday}
-                disabled={isClosed}
-                className={`tap-target shrink-0 px-3 rounded-control text-[12px] font-medium flex items-center gap-1.5 transition-all active:scale-95 disabled:opacity-50 ${
-                  financial.isHoliday
-                    ? "bg-info text-on-info"
-                    : "bg-muted/60 text-muted-foreground hover:text-foreground"
-                }`}
-              >
-                <Palmtree className="w-3.5 h-3.5" />
-                Tatil
-              </button>
             </div>
           </SheetHeader>
 

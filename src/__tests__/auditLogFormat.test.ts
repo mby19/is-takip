@@ -191,6 +191,8 @@ describe("gruplama ve biçimleme", () => {
   it("tarihi ve saati biçimler", () => {
     expect(formatLogDate("2026-09-03")).toBe("3 Eylül 2026");
     expect(formatLogTime("2026-09-11 20:40:12")).toBe("20:40");
-    expect(statusLabel("HOLIDAY")).toBe("İzinli");
+    // Eski denetim kayıtlarında HOLIDAY kalmış olabilir; silinmiş bir kavramın
+    // izini taşıdığı açıkça belirtilir, düz "İzin" diye gösterilmez.
+    expect(statusLabel("HOLIDAY")).toBe("İzinli (eski kayıt)");
   });
 });

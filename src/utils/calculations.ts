@@ -46,7 +46,6 @@ export interface WorkerStats {
   fullDays: number;
   halfDays: number;
   absentDays: number;
-  holidayDays: number;
 }
 
 /**
@@ -290,12 +289,10 @@ export function calculateWorkerStats(
   let fullDays = 0;
   let halfDays = 0;
   let absentDays = 0;
-  let holidayDays = 0;
   for (const row of breakdown) {
     if (row.status === "FULL") fullDays++;
     else if (row.status === "HALF") halfDays++;
     else if (row.status === "ABSENT") absentDays++;
-    else if (row.status === "HOLIDAY") holidayDays++;
   }
 
   return {
@@ -311,6 +308,5 @@ export function calculateWorkerStats(
     fullDays,
     halfDays,
     absentDays,
-    holidayDays,
   };
 }

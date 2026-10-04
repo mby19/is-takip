@@ -47,7 +47,7 @@ const attendance: Attendance[] = [
   { id: 2, worker_id: 2, date: "2026-05-04", status: "FULL" },
   { id: 3, worker_id: 1, date: "2026-05-05", status: "HALF" },
   { id: 4, worker_id: 1, date: "2026-05-06", status: "ABSENT" },
-  { id: 5, worker_id: 1, date: "2026-05-07", status: "HOLIDAY" },
+  { id: 5, worker_id: 1, date: "2026-05-07", status: "ABSENT" },
   { id: 6, worker_id: 2, date: "2026-05-07", status: "HALF" },
   // Farklı ay — ekran kapsamı dışında, sonucu bozmamalı
   { id: 7, worker_id: 1, date: "2026-04-10", status: "FULL" },
@@ -121,7 +121,6 @@ describe("calculatePeriodEarnings / buildWorkerStats", () => {
       expect(next.fullDays).toBe(legacy.fullDays);
       expect(next.halfDays).toBe(legacy.halfDays);
       expect(next.absentDays).toBe(legacy.absentDays);
-      expect(next.holidayDays).toBe(legacy.holidayDays);
     }
   });
 

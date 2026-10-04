@@ -17,7 +17,10 @@ const adapt = (db: DatabaseSync) => ({
   },
 });
 
-/** Migration 9 seviyesinde bir veritabanı: HOLIDAY yok, yeni tablolar yok. */
+/**
+ * Migration 14 öncesi bir veritabanı: 'HOLIDAY' durumu ve buna ait kayıt var,
+ * yeni tablolar yok. Onarımın bu halini dönüştürmesi gerekiyor.
+ */
 function legacyDb(): DatabaseSync {
   const db = new DatabaseSync(":memory:");
   db.exec(`
@@ -27,7 +30,7 @@ function legacyDb(): DatabaseSync {
       created_at DATETIME DEFAULT (DATETIME('now','localtime')), is_active BOOLEAN DEFAULT 1);
     CREATE TABLE attendance (
       id INTEGER PRIMARY KEY AUTOINCREMENT, worker_id INTEGER NOT NULL, date TEXT NOT NULL,
-      status TEXT CHECK( status IN ('FULL','HALF','ABSENT') ) NOT NULL,
+      status TEXT CHECK( status IN ('FULL','HALF','ABSENT','HOLIDAY') ) NOT NULL,
       UNIQUE(worker_id,date), FOREIGN KEY(worker_id) REFERENCES workers(id) ON DELETE CASCADE);
     CREATE TABLE daily_metrics (
       id INTEGER PRIMARY KEY AUTOINCREMENT, date TEXT UNIQUE NOT NULL,
@@ -46,7 +49,8 @@ function legacyDb(): DatabaseSync {
       FOREIGN KEY(worker_id) REFERENCES workers(id) ON DELETE CASCADE);
     INSERT INTO workers (name, daily_wage, worker_type) VALUES ('Ahmet Yılmaz', 900, 'GUNLUK');
     INSERT INTO attendance (worker_id, date, status)
-      VALUES (1,'2026-09-01','FULL'), (1,'2026-09-02','HALF'), (1,'2026-09-03','ABSENT');
+      VALUES (1,'2026-09-01','FULL'), (1,'2026-09-02','HALF'), (1,'2026-09-03','ABSENT'),
+             (1,'2026-09-04','HOLIDAY');
   `);
   // Üretimdeki gibi tetikleyiciler kurulu: daily_metrics olanları attendance'a bakar.
   for (const sql of CREATE_TRIGGERS) db.exec(sql);
@@ -64,6 +68,17 @@ const tables = () =>
   );
 const attendanceCount = () =>
   Number((db.prepare("SELECT COUNT(*) c FROM attendance").get() as { c: number }).c);
+
+const statusOf = (date: string) =>
+  (db.prepare("SELECT status FROM attendance WHERE date = ?").get(date) as { status: string })
+    .status;
+
+const attendanceTableSql = () =>
+  (
+    db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='attendance'").get() as {
+      sql: string;
+    }
+  ).sql;
 
 describe("repairSchema", () => {
   it("eksik tabloları ve sütunları tamamlar", async () => {
@@ -88,11 +103,12 @@ describe("repairSchema", () => {
     expect(report.failures).toEqual([]);
     expect(tables()).toContain("attendance");
     expect(tables()).not.toContain("attendance_fix");
-    expect(attendanceCount()).toBe(3);
-
-    // Artık İzin yazılabilmeli — asıl amaç buydu.
-    db.exec("INSERT INTO attendance (worker_id, date, status) VALUES (1,'2026-09-04','HOLIDAY')");
     expect(attendanceCount()).toBe(4);
+
+    // Artık 'HOLIDAY' yazılamamalı — CHECK kısıtı onu reddetmeli.
+    expect(() =>
+      db.exec("INSERT INTO attendance (worker_id, date, status) VALUES (1,'2026-09-05','HOLIDAY')"),
+    ).toThrow();
   });
 
   it("tetikleyicilerin düşürüldüğünü bildirir", async () => {
@@ -123,7 +139,7 @@ describe("repairSchema", () => {
     expect(report.repaired).toContain("Yarıda kalmış puantaj tablosu kurtarıldı");
     expect(report.failures).toEqual([]);
     expect(tables()).toContain("attendance");
-    expect(attendanceCount()).toBe(3);
+    expect(attendanceCount()).toBe(4);
   });
 
   it("migration 10'dan kalan attendance_new'i de kurtarır", async () => {
@@ -138,7 +154,23 @@ describe("repairSchema", () => {
     `);
     const report = await repairSchema(adapt(db));
     expect(report.failures).toEqual([]);
-    expect(attendanceCount()).toBe(3);
+    expect(attendanceCount()).toBe(4);
+  });
+
+  it("'HOLIDAY' kayıtlarını 'ABSENT' yapar ve constraint'i HOLIDAY'sız kurar", async () => {
+    // legacyDb() migration 14 öncesi şemayı kurar ve bir HOLIDAY kaydı bırakır.
+    expect(statusOf("2026-09-04")).toBe("HOLIDAY");
+    expect(attendanceTableSql()).toContain("HOLIDAY");
+
+    const report = await repairSchema(adapt(db));
+
+    expect(report.failures).toEqual([]);
+    expect(statusOf("2026-09-04")).toBe("ABSENT");
+    expect(attendanceTableSql()).not.toContain("HOLIDAY");
+    // Diğer kayıtlar korunur — dönüşüm yalnız HOLIDAY olan satırlara dokunur.
+    expect(attendanceCount()).toBe(4);
+    expect(statusOf("2026-09-01")).toBe("FULL");
+    expect(statusOf("2026-09-02")).toBe("HALF");
   });
 
   it("son çare: veri hiç bulunamazsa tabloyu boş kurar ve bunu söyler", async () => {

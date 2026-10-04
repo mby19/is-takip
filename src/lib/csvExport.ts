@@ -40,7 +40,6 @@ const STATUS_LABEL: Record<AttendanceStatus, string> = {
   FULL: "Tam",
   HALF: "Yarım",
   ABSENT: "Yok",
-  HOLIDAY: "Tatil",
 };
 
 const TYPE_LABEL: Record<Worker["worker_type"], string> = {
@@ -200,9 +199,8 @@ export function buildMetricsCsv(metrics: readonly DailyMetric[]): string {
       formatQuantity(m.production_amount),
       formatCsvMoney(m.total_earned),
       formatCsvMoney(m.extra_expenses),
-      m.is_holiday ? "Evet" : "Hayır",
     ]);
-  return toCsv(["Tarih", "Üretim (Palet)", "Ciro", "Gider", "Tatil"], rows);
+  return toCsv(["Tarih", "Üretim (Palet)", "Ciro", "Gider"], rows);
 }
 
 export function buildPaymentsCsv(

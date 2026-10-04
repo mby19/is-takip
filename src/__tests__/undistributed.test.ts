@@ -180,14 +180,6 @@ describe("Aktif ortak yokken kâr kaybolmaz", () => {
     expect(roundMoney(partnerSum(result, [2, 3]) + result.undistributed)).toBe(result.netProfit);
   });
 
-  it("ortak var ama hepsi HOLIDAY: aynı kural", () => {
-    const pool = [worker(1, "GUNLUK", 800), worker(2, "ORTAK", 0), worker(3, "ORTAK", 0)];
-    const result = calculateDailyEarnings(pool, { 1: "FULL", 2: "HOLIDAY", 3: "HOLIDAY" }, 3000, 0);
-
-    expect(result.netProfit).toBe(2200);
-    expect(result.undistributed).toBe(2200);
-  });
-
   it("ortak var ama hepsi HALF: kâr dağıtılır, undistributed 0 kalır", () => {
     const pool = [worker(1, "GUNLUK", 1000), worker(2, "ORTAK", 0), worker(3, "ORTAK", 0)];
     const result = calculateDailyEarnings(pool, { 1: "FULL", 2: "HALF", 3: "HALF" }, 5000, 500);
