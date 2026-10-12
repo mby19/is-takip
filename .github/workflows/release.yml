@@ -25,7 +25,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - id: create_release
-        uses: softprops/action-gh-release@e598afbe1493e6b1bafb1f389cabb956eab91231 # v3.0.3
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
         with:
           draft: true
           generate_release_notes: true
@@ -54,7 +54,7 @@ jobs:
           node-version: 22
           cache: npm
 
-      - uses: dtolnay/rust-toolchain@7e38f4b43b4db5c8dd498af069a4f6196df1d067 # v1
+      - uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f # v1
         with:
           targets: ${{ matrix.target }}
 
@@ -80,7 +80,7 @@ jobs:
           TAURI_SIGNING_WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.TAURI_SIGNING_WINDOWS_CERTIFICATE_PASSWORD }}
 
       - name: Upload to Release
-        uses: softprops/action-gh-release@e598afbe1493e6b1bafb1f389cabb956eab91231 # v3.0.3
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
         with:
           tag_name: ${{ github.ref_name }}
           draft: true
@@ -97,7 +97,7 @@ jobs:
       # kendi platformunun latest.json'unu üretir ve aynı adda yüklesiydi
       # son yükleyen kazanır, diğer platformların imzaları kaybolurdu.
       # Tek bir birleşik manifest `updater-manifest` işinde üretilir.
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: updater-${{ matrix.target }}
           path: src-tauri/target/${{ matrix.target }}/release/bundle/**/*.latest.json
@@ -117,7 +117,7 @@ jobs:
       # taşıyor, tek dizine düzleştirilince ad çakışması son yüklenenin
       # üzerine yazıyor, yine tek platform kalıyor. Her artifact kendi
       # alt dizinine indirilir, ağaç özyinelemeli gezilir.
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           pattern: updater-*
           path: manifests
@@ -150,7 +150,7 @@ jobs:
           '
 
       - name: Upload latest.json to Release
-        uses: softprops/action-gh-release@e598afbe1493e6b1bafb1f389cabb956eab91231 # v3.0.3
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
         with:
           tag_name: ${{ github.ref_name }}
           draft: true
@@ -186,7 +186,7 @@ jobs:
       - name: Install NDK
         run: sdkmanager "ndk;27.0.11902837"
 
-      - uses: dtolnay/rust-toolchain@7e38f4b43b4db5c8dd498af069a4f6196df1d067 # v1
+      - uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f # v1
         with:
           targets: aarch64-linux-android,armv7-linux-androideabi,i686-linux-android,x86_64-linux-android
 
@@ -211,7 +211,7 @@ jobs:
         run: npx tauri android build --apk
 
       - name: Upload to Release
-        uses: softprops/action-gh-release@e598afbe1493e6b1bafb1f389cabb956eab91231 # v3.0.3
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
         with:
           tag_name: ${{ github.ref_name }}
           draft: true
@@ -248,7 +248,7 @@ jobs:
       - name: Install NDK
         run: sdkmanager "ndk;27.0.11902837"
 
-      - uses: dtolnay/rust-toolchain@7e38f4b43b4db5c8dd498af069a4f6196df1d067 # v1
+      - uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f # v1
         with:
           targets: aarch64-linux-android,armv7-linux-androideabi,i686-linux-android,x86_64-linux-android
 
@@ -276,7 +276,7 @@ jobs:
         run: npx tauri android build --aab
 
       - name: Upload to Release
-        uses: softprops/action-gh-release@e598afbe1493e6b1bafb1f389cabb956eab91231 # v3.0.3
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
         with:
           tag_name: ${{ github.ref_name }}
           draft: true
